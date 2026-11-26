@@ -81,44 +81,71 @@ R.interestsModal = interestsModal;
 R.home = function(app){
   E.setHead("Evently: events, concerts and nightlife in Uganda","Discover concerts, parties, nightlife, festivals and comedy in Kampala and across Uganda. Your next experience starts here.");
   const evs=E.events(); const up=evs.filter(E.isActive).sort((a,b)=>a.startD-b.startD);
-  const featured = up.filter(e=>e.featured).slice(0,6);
-  const tr = E.trending(evs).slice(0,8);
+  const tr = E.trending(evs).slice(0,10);
   const wk=E.weekendRange(); const weekend=up.filter(e=>e.startD>=wk.fri && e.startD<wk.end).sort((a,b)=>E.score(b)-E.score(a));
-  const cats=E.CATS().filter(c=>!c.hidden);
-  const countCat = c => c.id==="free" ? up.filter(e=>e.isFree).length : up.filter(e=>e.cat===c.id).length;
-  const recs=recommend(8);
+  const recs=recommend(10);
   const deals=(window.EVENTLY_DEALS||[]).map(R.dealResolve).filter(d=>d && !d.expired).slice(0,3);
-  const venues=new Set(up.map(e=>e.venue)).size;
+  const fol=E.follows(); const atFollowed=up.filter(e=>fol.includes(e.venue));
+  const u=E.me(); const savedUp=up.filter(e=>E.isSaved(e.slug));
+  const weekAgo=Date.now()-7*E.DAY; const added=up.filter(e=>e.added && Date.parse(e.added)>=weekAgo).sort((a,b)=>Date.parse(b.added)-Date.parse(a.added));
+  const showAdded = added.length && added.length < up.length*0.8;
+  const byCat = id => up.filter(e=>e.cat===id).slice(0,12);
+  const free = up.filter(e=>e.isFree).slice(0,12);
+  // popular places: venues with the most upcoming events
+  const vc={}; up.forEach(e=>{ if(!/to be announced|not stated/i.test(e.venue)) vc[e.venue]=(vc[e.venue]||0)+1; });
+  const places=Object.entries(vc).sort((a,b)=>b[1]-a[1]).slice(0,12);
+  // 14-day strip
+  const rail=(id,eyebrow,title,items,more,opts={})=> items.length ? `<section class="row-sec" aria-labelledby="h-${id}"><div class="sec-head">${eyebrow?`<div><span class="eyebrow">${eyebrow}</span>`:"<div>"}<h2 id="h-${id}">${title}</h2></div>${more||""}</div>
+      <div class="rail2-wrap"><button class="rail-arrow prev" data-rail="${id}" data-dir="-1" aria-label="Scroll left">‹</button><div class="rail2${opts.ranked?" ranked":""}" id="r-${id}">${items.join("")}</div><button class="rail-arrow next" data-rail="${id}" data-dir="1" aria-label="Scroll right">›</button></div></section>` : "";
   app.innerHTML = `
-  <section class="hero"><canvas id="heroCv" aria-hidden="true"></canvas><div class="wrap">
-    <span class="eyebrow" style="color:#fdba74">Kampala · Entebbe · Jinja · Mbarara · and beyond</span>
+  <section class="hero hero-compact"><canvas id="heroCv" aria-hidden="true"></canvas><div class="wrap">
     <h1>Your next experience <em>starts here.</em></h1>
-    <p class="hero-sub">Concerts, parties, bar nights, festivals and comedy across Uganda. Find what's on today, this weekend and in the weeks ahead.</p>
+    <p class="hero-sub">Concerts, parties, bar nights, festivals and comedy across Uganda.</p>
     ${searchBox("heroSearch")}
-    <div class="chips"><a class="chip" href="#discover-today">Tonight</a><a class="chip" href="#weekend">This weekend</a><a class="chip" href="#nightlife-in-kampala">Nightlife</a><a class="chip" href="#concerts-in-uganda">Concerts</a><a class="chip" href="#free-events-in-uganda">Free</a></div>
-    <div style="display:flex;gap:12px;flex-wrap:wrap"><a class="btn btn-primary" href="#discover">Discover events</a><a class="btn" style="background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.2)" href="#organizers">List your event</a></div>
-    <div class="hero-stats"><span><b>${up.length}</b>upcoming events</span><span><b>${venues}</b>venues</span><span><b>${weekend.length}</b>this weekend</span></div>
+    <button type="button" class="qf-toggle" id="qfBtn" aria-expanded="false" aria-controls="qfPanel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M7 12h10M10 18h4"/></svg>Filter events<span class="qf-n" id="qfN" hidden></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button>
+    <div class="qf-panel" id="qfPanel" hidden>
+      <div class="qf-group"><span>When</span><div class="chips">${[["any","Any time"],["today","Tonight"],["tomorrow","Tomorrow"],["weekend","This weekend"],["week","Next 7 days"],["month","Next 30 days"]].map(([v,l])=>`<button type="button" class="chip" data-qwhen="${v}" aria-pressed="${v==="any"}">${l}</button>`).join("")}</div></div>
+      <div class="qf-group"><span>Type</span><div class="chips">${E.CATS().filter(c=>!c.hidden&&c.id!=="free").map(c=>`<button type="button" class="chip" data-qcat="${c.id}" aria-pressed="false">${esc(c.name)}</button>`).join("")}</div></div>
+      <div class="qf-group"><span>Entry</span><div class="chips"><button type="button" class="chip" data-qflag="free" aria-pressed="false">Free entry</button><button type="button" class="chip" data-qflag="tix" aria-pressed="false">Tickets online</button></div></div>
+      <div class="qf-actions"><button type="button" class="btn btn-primary" id="qfGo">Show events</button><button type="button" class="btn" style="background:none;color:#fff;border-color:rgba(255,255,255,.25)" id="qfClear">Clear</button><span class="small" style="color:#d6cfc8" id="qfCount"></span></div>
+    </div>
   </div></section>
-  <div class="wrap">
-    <section class="section"><div class="sec-head"><div><span class="eyebrow">Featured</span><h2>Big nights ahead</h2></div><a class="link" href="#discover">See all events</a></div>
-      <div class="grid big">${featured.map(e=>E.card(e,{src:"home-featured"})).join("")}</div></section>
-    <section class="section">${recs.length ? `<div class="sec-head"><div><span class="eyebrow">Evently Match</span><h2>Recommended for you</h2></div><button class="link" style="border:0;background:none" id="editInts">Edit interests</button></div>
-        <div class="rail">${recs.map(r=>`<div style="display:grid;gap:6px">${E.card(r.e,{src:"home-match"})}<span class="tiny muted">Because: ${esc(r.why.join(", "))}</span></div>`).join("")}</div>`
-      : `<div class="panel" style="grid-template-columns:1fr auto;align-items:center;gap:18px"><div style="display:grid;gap:6px"><span class="eyebrow">Evently Match</span><h3>Get events picked for you</h3><p class="muted small">Choose a few interests and we'll recommend events here, based on what you like, where you are and what you save.</p></div><button class="btn btn-primary" id="editInts">Choose interests</button></div>`}</section>
-    <section class="section"><div class="sec-head"><div><span class="eyebrow">Evently Radar</span><h2>Trending this week</h2></div><a class="link" href="#radar">How trending works</a></div>
-      <div class="rail">${tr.map((x,i)=>E.card(x.e,{rank:i+1,src:"home-trending"})).join("")}</div></section>
-    <section class="section"><div class="sec-head"><div><span class="eyebrow">${E.fDate(wk.fri)} to ${E.fDate(wk.sun)}</span><h2>This weekend</h2></div><a class="link" href="#weekend">Plan your weekend</a></div>
-      ${weekend.length? `<div class="grid">${weekend.slice(0,8).map(e=>E.card(e,{src:"home-weekend"})).join("")}</div>` : E.empty("Quiet weekend so far","No events are listed for this weekend yet. Check upcoming events or list your own.",`<a class="btn btn-primary" href="#discover">Browse upcoming</a>`)}</section>
-    <section class="section"><div class="sec-head"><div><span class="eyebrow">Explore</span><h2>Categories</h2></div><a class="link" href="#categories">All categories</a></div>
-      <div class="cats">${cats.map(c=>`<a class="cat" href="#category-${c.id}">${I.cats[c.id]||I.cats.other}<div><b>${esc(c.name)}</b><br><small>${countCat(c)} upcoming</small></div></a>`).join("")}</div></section>
-    <section class="section"><div class="sec-head"><div><span class="eyebrow">Evently Deals</span><h2>Offers and free nights</h2></div><a class="link" href="#deals">All deals</a></div>
-      <div class="grid big">${deals.map(R.dealCard).join("")}</div></section>
-    <section class="section"><div class="panel" style="background:var(--ink);color:var(--bg);border:0;grid-template-columns:1fr auto;align-items:center;padding:28px">
-      <div style="display:grid;gap:8px"><span class="eyebrow" style="color:var(--accent)">For organizers</span><h2>Put your event in front of Kampala</h2><p style="opacity:.8;max-width:56ch">List events for free, share a poster in one tap and see how many people viewed, saved and planned to attend.</p></div>
+  <div class="wrap home-rows">
+    ${rail("trend","","Trending now",tr.map((x,i)=>E.tile(x.e,{rank:i+1,src:"home-trending"})),`<a class="link" href="#radar">See all</a>`,{ranked:true})}
+    ${rail("follow","Places you follow","New from your places",atFollowed.map(e=>E.tile(e,{src:"home-follow"})),`<a class="link" href="#my-events">My events</a>`)}
+    ${rail("saved","","Your favourites",savedUp.map(e=>E.tile(e,{src:"home-saved"})),`<a class="link" href="#my-events">See all</a>`)}
+    ${showAdded?rail("added","","Just added",added.slice(0,12).map(e=>E.tile(e,{src:"home-added"})),`<a class="link" href="#discover">See all</a>`):""}
+    ${rail("weekend",`${E.fDate(wk.fri)} to ${E.fDate(wk.sun)}`,"This weekend",weekend.slice(0,14).map(e=>E.tile(e,{src:"home-weekend"})),`<a class="link" href="#weekend">Plan your weekend</a>`)}
+    ${rail("soon","","Coming up next",up.filter(e=>E.status(e)==="upcoming").slice(0,14).map(e=>E.tile(e,{src:"home-soon"})),`<a class="link" href="#discover">See all</a>`)}
+    ${recs.length?rail("match","Picked for you","Recommended for you",recs.map(r=>E.tile(r.e,{src:"home-match"})),`<button class="link" style="border:0;background:none" id="editInts">Edit interests</button>`):""}
+    ${rail("night","","Nightlife and bar nights",byCat("nightlife").map(e=>E.tile(e,{src:"home-cat"})),`<a class="link" href="#category-nightlife">See all</a>`)}
+    ${rail("conc","","Concerts",byCat("concerts").map(e=>E.tile(e,{src:"home-cat"})),`<a class="link" href="#category-concerts">See all</a>`)}
+    ${rail("food","","Food and brunch",byCat("food").map(e=>E.tile(e,{src:"home-cat"})),`<a class="link" href="#category-food">See all</a>`)}
+    ${rail("free","","Free entry",free.map(e=>E.tile(e,{src:"home-free"})),`<a class="link" href="#free-events-in-uganda">See all</a>`)}
+    ${places.length?`<section class="row-sec"><div class="sec-head"><div><h2>Popular places</h2><p class="small muted">Follow a place and we'll tell you when it lists something new.</p></div></div>
+      <div class="places">${places.map(([v,n])=>`<div class="place"><div><b>${esc(v)}</b><span class="small muted">${n} upcoming</span></div><button class="btn btn-sm ${E.isFollowing(v)?"btn-dark":"btn-ghost"}" data-follow-place="${esc(v)}" aria-pressed="${E.isFollowing(v)}">${E.isFollowing(v)?"Following":"Follow"}</button></div>`).join("")}</div></section>`:""}
+    ${deals.length?`<section class="row-sec"><div class="sec-head"><div><h2>Offers and free nights</h2></div><a class="link" href="#deals">All deals</a></div>
+      <div class="grid big">${deals.map(R.dealCard).join("")}</div></section>`:""}
+    <section class="row-sec"><div class="panel" style="background:var(--ink);color:var(--bg);border:0;grid-template-columns:1fr auto;align-items:center;padding:28px">
+      <div style="display:grid;gap:8px"><h2>Put your event in front of Kampala</h2><p style="opacity:.8;max-width:56ch">List events for free and share a ready-made poster in one tap.</p></div>
       <a class="btn btn-primary" href="#organizers">Submit an event</a></div></section>
   </div>`;
   bindSearch($("#heroSearch"), q=>{ R.discoverState.q=q; location.hash="discover"; });
-  $("#editInts").onclick=()=>interestsModal(()=>R.render());
+  const ei=$("#editInts"); if(ei) ei.onclick=()=>interestsModal(()=>R.render());
+  const qf={date:"any",cats:[],free:false,tix:false};
+  const qfState=()=>Object.assign({},R.discoverState,{q:"",cats:qf.cats,date:qf.date,from:"",to:"",loc:"",free:qf.free,tix:qf.tix,priceMax:"",trending:false,includePast:false,sort:"date",page:1});
+  const qfSync=()=>{ const n=qf.cats.length+(qf.date!=="any")+qf.free+qf.tix; $("#qfN").hidden=!n; $("#qfN").textContent=n; const c=filterEvents(qfState()).length; $("#qfCount").textContent=`${c} event${c===1?"":"s"} match`; };
+  $("#qfBtn").onclick=()=>{ const p=$("#qfPanel"); p.hidden=!p.hidden; $("#qfBtn").setAttribute("aria-expanded",String(!p.hidden)); if(!p.hidden) qfSync(); };
+  $("#qfGo").onclick=()=>{ Object.assign(R.discoverState,qfState(),{fromHome:true}); location.hash="discover"; };
+  $("#qfClear").onclick=()=>{ Object.assign(qf,{date:"any",cats:[],free:false,tix:false}); $$("#qfPanel [aria-pressed]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.qwhen==="any")); qfSync(); };
+  app.onclick=e=>{
+    const qw=e.target.closest("[data-qwhen]"); if(qw){ qf.date=qw.dataset.qwhen; $$("[data-qwhen]").forEach(b=>b.setAttribute("aria-pressed",b===qw)); qfSync(); return; }
+    const qc=e.target.closest("[data-qcat]"); if(qc){ const id=qc.dataset.qcat; qf.cats=qf.cats.includes(id)?qf.cats.filter(x=>x!==id):[...qf.cats,id]; qc.setAttribute("aria-pressed",qf.cats.includes(id)); qfSync(); return; }
+    const qg=e.target.closest("[data-qflag]"); if(qg){ const k=qg.dataset.qflag; qf[k]=!qf[k]; qg.setAttribute("aria-pressed",qf[k]); qfSync(); return; }
+    const d=e.target.closest("[data-day]"); if(d){ Object.assign(R.discoverState,{date:"day",from:d.dataset.day,to:d.dataset.day,page:1}); location.hash="discover"; return; }
+    const a=e.target.closest("[data-rail]"); if(a){ const r=$("#r-"+a.dataset.rail); r.scrollBy({left:(+a.dataset.dir)*r.clientWidth*0.85,behavior:"smooth"}); return; }
+    const f=e.target.closest("[data-follow-place]"); if(f){ const v=f.dataset.followPlace; const on=E.toggleFollow(v); f.setAttribute("aria-pressed",on); f.className="btn btn-sm "+(on?"btn-dark":"btn-ghost"); f.textContent=on?"Following":"Follow"; E.toast(on?`You'll be notified when ${v} lists new events`:"Unfollowed"); if(on && "Notification" in window && Notification.permission==="default"){ try{ Notification.requestPermission(); }catch(_){} } return; }
+  };
   startHero();
 };
 function startHero(){
@@ -144,6 +171,8 @@ function filterEvents(st){
   if(st.q){ const q=st.q.toLowerCase(); list=list.filter(e=>[e.title,e.venue,e.organizer,e.area,e.city,e.desc,...(e.artists||[]),...(e.tags||[]),E.catName(e.cat)].join(" ").toLowerCase().includes(q)); }
   if(st.cats.length) list=list.filter(e=>st.cats.includes(e.cat) || (st.cats.includes("free")&&e.isFree));
   if(st.date==="today") list=list.filter(e=>e.startD.getTime()<tStart+E.DAY && e.endD.getTime()>now);
+  if(st.date==="tomorrow") list=list.filter(e=>e.startD.getTime()>=tStart+E.DAY && e.startD.getTime()<tStart+2*E.DAY);
+  if(st.date==="day" && st.from) list=list.filter(e=>E.ymd(e.startD)===st.from);
   if(st.date==="weekend") list=list.filter(e=>e.startD>=wk.fri && e.startD<wk.end);
   if(st.date==="week") list=list.filter(e=>e.startD.getTime()<now+7*E.DAY);
   if(st.date==="month") list=list.filter(e=>e.startD.getTime()<now+31*E.DAY);
@@ -159,6 +188,19 @@ function filterEvents(st){
   return list;
 }
 R.filterEvents = filterEvents;
+R.activeCount = st => st.cats.length+(st.date!=="any"?1:0)+(st.loc?1:0)+(st.priceMax?1:0)+(st.free?1:0)+(st.tix?1:0)+(st.trending?1:0)+(st.includePast?1:0);
+R.calMonth = 0;
+R.calendarHTML = function(st){
+  const now=new Date(); const p0=E.kParts(now); let y=p0.y, m=p0.m+R.calMonth; while(m>11){m-=12;y++;} while(m<0){m+=12;y--;}
+  const first=E.kDate(y,m,1); const startDow=(E.kParts(first).dow+6)%7; const dim=new Date(Date.UTC(y,m+1,0)).getUTCDate();
+  const counts={}; E.events().filter(E.isActive).forEach(e=>{ const k=E.ymd(e.startD); counts[k]=(counts[k]||0)+1; });
+  const todayK=E.ymd(now); const cells=[];
+  for(let i=0;i<startDow;i++) cells.push(`<span></span>`);
+  for(let d=1; d<=dim; d++){ const k=`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; const n=counts[k]||0; const past=k<todayK;
+    cells.push(`<button type="button" class="cd${n?" has":""}${k===todayK?" today":""}${st.date==="day"&&st.from===k?" sel":""}" data-calday="${k}" ${past||!n?"disabled":""} aria-label="${d} ${E.fmt(first,{month:"long"})}: ${n} event${n===1?"":"s"}">${d}${n?`<i></i>`:""}</button>`); }
+  return `<div class="cal-head"><button type="button" class="cal-nav" data-calmove="-1" ${R.calMonth<=0?"disabled":""} aria-label="Previous month">‹</button><b>${E.fmt(first,{month:"long",year:"numeric"})}</b><button type="button" class="cal-nav" data-calmove="1" ${R.calMonth>=5?"disabled":""} aria-label="Next month">›</button></div>
+    <div class="cal-grid"><span class="dow">M</span><span class="dow">T</span><span class="dow">W</span><span class="dow">T</span><span class="dow">F</span><span class="dow">S</span><span class="dow">S</span>${cells.join("")}</div>`;
+};
 const PER=12;
 R.discover = function(app, preset){
   const st=R.discoverState;
@@ -169,26 +211,22 @@ R.discover = function(app, preset){
   app.innerHTML=`<div class="wrap">
     <div class="page-head"><span class="eyebrow">${preset?esc(preset.eyebrow):"Event directory"}</span><h1 style="font-size:clamp(2rem,4.5vw,3.2rem)">${esc(title)}</h1>${preset?`<p class="muted">${esc(preset.intro)}</p>`:""}</div>
     <div style="margin:18px 0 24px">${searchBox("discSearch")}</div>
-    <div class="disc">
-      <aside class="filters" id="filters" data-collapsed="true" aria-label="Filters">
-        <div style="display:flex;justify-content:space-between;align-items:center"><h3>Filters</h3><div style="display:flex;gap:8px"><button class="btn btn-ghost btn-sm" id="clearF">Clear filters</button><button class="btn btn-ghost btn-sm" id="toggleF" aria-expanded="false">Show</button></div></div>
-        <div class="f-body" style="display:grid;gap:18px">
-        <div class="f-group"><span class="lbl">Date</span><div class="chips">${[["any","Any time"],["today","Today"],["weekend","This weekend"],["week","Next 7 days"],["month","Next 30 days"],["custom","Pick dates"]].map(([v,l])=>`<button class="chip" data-date="${v}" aria-pressed="${st.date===v}">${l}</button>`).join("")}</div>
-          <div class="form-grid" id="customDates" ${st.date==="custom"?"":"hidden"}><div class="field"><label for="fFrom">From</label><input class="input" type="date" id="fFrom" value="${st.from}"></div><div class="field"><label for="fTo">To</label><input class="input" type="date" id="fTo" value="${st.to}"></div></div></div>
+    <div class="disc no-filters">
+      ${st.fromHome?"":E.fold("discover","Filter events",R.activeCount(st),`<div class="fold-body">
+        <div class="f-group"><label for="fWhen">When</label><select class="input" id="fWhen">${[["any","Any time"],["today","Today"],["tomorrow","Tomorrow"],["weekend","This weekend"],["week","Next 7 days"],["month","Next 30 days"]].map(([v,l])=>`<option value="${v}" ${st.date===v?"selected":""}>${l}</option>`).join("")}</select></div>
         <div class="f-group"><span class="lbl">Category</span><div class="chips">${E.CATS().filter(c=>!c.hidden).map(c=>`<button class="chip" data-cat="${c.id}" aria-pressed="${st.cats.includes(c.id)}">${esc(c.name)}</button>`).join("")}</div></div>
         <div class="f-group"><label for="fLoc">Location</label><select class="input" id="fLoc"><option value="">Anywhere in Uganda</option>${locs.map(l=>`<option ${st.loc===l?"selected":""}>${esc(l)}</option>`).join("")}</select></div>
-        <div class="f-group"><label for="fPrice">Price range</label><select class="input" id="fPrice"><option value="">Any price</option>${[[20000,"Up to UGX 20,000"],[50000,"Up to UGX 50,000"],[100000,"Up to UGX 100,000"],[200000,"Up to UGX 200,000"]].map(([v,l])=>`<option value="${v}" ${+st.priceMax===v?"selected":""}>${l}</option>`).join("")}</select><span class="tiny muted">Uses the starting price organizers list. Events with no listed price are hidden when you set a range.</span></div>
-        <label class="check"><input type="checkbox" id="fFree" ${st.free?"checked":""}> Free events only</label>
+        <div class="f-group"><label for="fPrice">Price range</label><select class="input" id="fPrice"><option value="">Any price</option>${[[20000,"Up to UGX 20,000"],[50000,"Up to UGX 50,000"],[100000,"Up to UGX 100,000"],[200000,"Up to UGX 200,000"]].map(([v,l])=>`<option value="${v}" ${+st.priceMax===v?"selected":""}>${l}</option>`).join("")}</select></div>
+        <div class="f-group f-checks"><span class="lbl">Show only</span><div class="checks-row"><label class="check"><input type="checkbox" id="fFree" ${st.free?"checked":""}> Free events only</label>
         <label class="check"><input type="checkbox" id="fTix" ${st.tix?"checked":""}> Tickets sold online</label>
         <label class="check"><input type="checkbox" id="fTrend" ${st.trending?"checked":""}> Trending events only</label>
-        <label class="check"><input type="checkbox" id="fPast" ${st.includePast?"checked":""}> Include events that ended in the last day</label>
-        </div>
-      </aside>
+        <label class="check"><input type="checkbox" id="fPast" ${st.includePast?"checked":""}> Include events that ended in the last day</label></div></div>
+        </div><div class="qf-actions"><button type="button" class="btn btn-primary btn-sm" data-fold="discover">Done</button><button type="button" class="btn btn-ghost btn-sm" id="clearF">Clear filters</button></div>`)}
       <div style="min-width:0">
         <div class="toolbar"><span class="muted" id="resCount"></span>
           <div style="display:flex;gap:10px;flex-wrap:wrap"><label class="sr" for="fSort">Sort</label><select class="input" id="fSort" style="width:auto;height:38px"><option value="date">Soonest first</option><option value="popular">Most popular</option><option value="price">Lowest price</option></select>
           <div class="seg" role="group" aria-label="Layout"><button data-view="grid" aria-pressed="${st.view==="grid"}">${I.grid}Grid</button><button data-view="list" aria-pressed="${st.view==="list"}">${I.list}List</button></div></div></div>
-        <div id="activeF" class="chips" style="margin-bottom:14px"></div>
+        <div id="activeF" class="chips" style="margin-bottom:14px"></div>${st.fromHome?`<p class="small muted" style="margin:-4px 0 14px">Showing your picks from the home page. <a class="link" href="#home">Change filters</a></p>`:""}
         <div id="results">${E.skeletonGrid(6)}</div>
         <div id="more" style="display:grid;place-items:center;padding:24px"></div>
       </div></div></div>`;
@@ -197,7 +235,8 @@ R.discover = function(app, preset){
   const draw=()=>{
     const list=filterEvents(st); const shown=list.slice(0,st.page*PER);
     $("#resCount").textContent = `${list.length} event${list.length===1?"":"s"}`;
-    const act=[]; if(st.q) act.push(["q",`“${st.q}”`]); st.cats.forEach(c=>act.push(["cat:"+c,E.catName(c)])); if(st.date!=="any") act.push(["date",{today:"Today",weekend:"This weekend",week:"Next 7 days",month:"Next 30 days",custom:"Custom dates"}[st.date]]); if(st.loc) act.push(["loc",st.loc]); if(st.free) act.push(["free","Free"]); if(st.priceMax) act.push(["price","≤ "+E.ugx(st.priceMax)]); if(st.trending) act.push(["trending","Trending"]);
+    const act=[]; if(st.q) act.push(["q",`“${st.q}”`]); st.cats.forEach(c=>act.push(["cat:"+c,E.catName(c)])); if(st.date!=="any") act.push(["date",st.date==="day"&&st.from?E.fmt(E.parseLocal(st.from+"T12:00"),{weekday:"short",day:"numeric",month:"short"}):{today:"Today",tomorrow:"Tomorrow",weekend:"This weekend",week:"Next 7 days",month:"Next 30 days",custom:"Custom dates",day:"A specific day"}[st.date]]); if(st.loc) act.push(["loc",st.loc]); if(st.free) act.push(["free","Free"]); if(st.priceMax) act.push(["price","≤ "+E.ugx(st.priceMax)]); if(st.trending) act.push(["trending","Trending"]);
+    E.foldCount("discover",R.activeCount(st));
     $("#activeF").innerHTML=act.map(([k,l])=>`<button class="chip" data-rm="${esc(k)}" aria-label="Remove filter ${esc(l)}">${esc(l)} ✕</button>`).join("");
     $("#results").innerHTML = list.length ? (st.view==="grid" ? `<div class="grid">${shown.map(e=>E.card(e,{src:"discover"})).join("")}</div>` : `<div class="list">${shown.map(e=>E.row(e)).join("")}</div>`)
       : E.empty("No events match","Try fewer filters, another date range or a different search.",`<button class="btn btn-primary" id="clear2">Clear filters</button>`);
@@ -207,22 +246,20 @@ R.discover = function(app, preset){
   };
   const clear=()=>{ Object.assign(st,{q:"",cats:[],date:"any",from:"",to:"",loc:"",free:false,priceMax:"",trending:false,includePast:false,tix:false}); R.discover(app); };
   app.onclick=e=>{
-    const d=e.target.closest("[data-date]"); if(d){ st.date=d.dataset.date; $$("[data-date]").forEach(b=>b.setAttribute("aria-pressed",b===d)); $("#customDates").hidden=st.date!=="custom"; update(); }
     const c=e.target.closest("[data-cat]"); if(c){ const id=c.dataset.cat; st.cats=st.cats.includes(id)?st.cats.filter(x=>x!==id):[...st.cats,id]; c.setAttribute("aria-pressed",st.cats.includes(id)); update(); }
     const v=e.target.closest("[data-view]"); if(v){ st.view=v.dataset.view; try{localStorage.setItem("evently.view",st.view)}catch(_){}; $$("[data-view]").forEach(b=>b.setAttribute("aria-pressed",b===v)); draw(); }
     const rm=e.target.closest("[data-rm]"); if(rm){ const k=rm.dataset.rm; if(k==="q"){st.q="";$("#discSearch-in").value="";} else if(k.startsWith("cat:")) st.cats=st.cats.filter(x=>x!==k.slice(4)); else if(k==="date") st.date="any"; else if(k==="loc") st.loc=""; else if(k==="free") st.free=false; else if(k==="price") st.priceMax=""; else if(k==="trending") st.trending=false; R.discover(app); }
   };
-  $("#clearF").onclick=clear;
-  $("#toggleF").onclick=()=>{ const f=$("#filters"); const c=f.dataset.collapsed==="true"; f.dataset.collapsed=String(!c); $("#toggleF").textContent=c?"Hide":"Show"; $("#toggleF").setAttribute("aria-expanded",String(c)); };
-  $("#fLoc").onchange=e=>{st.loc=e.target.value;update();};
-  $("#fPrice").onchange=e=>{st.priceMax=e.target.value;update();};
-  $("#fFree").onchange=e=>{st.free=e.target.checked;update();};
-  $("#fTix").onchange=e=>{st.tix=e.target.checked;update();};
-  $("#fTrend").onchange=e=>{st.trending=e.target.checked;update();};
-  $("#fPast").onchange=e=>{st.includePast=e.target.checked;update();};
+  if($("#clearF")) $("#clearF").onclick=clear;
+  if($("#toggleF")) $("#toggleF").onclick=()=>{ const f=$("#filters"); const c=f.dataset.collapsed==="true"; f.dataset.collapsed=String(!c); $("#toggleF").textContent=c?"Hide":"Show"; $("#toggleF").setAttribute("aria-expanded",String(c)); };
+  if($("#fLoc")) $("#fLoc").onchange=e=>{st.loc=e.target.value;update();};
+  if($("#fPrice")) $("#fPrice").onchange=e=>{st.priceMax=e.target.value;update();};
+  if($("#fFree")) $("#fFree").onchange=e=>{st.free=e.target.checked;update();};
+  if($("#fTix")) $("#fTix").onchange=e=>{st.tix=e.target.checked;update();};
+  if($("#fTrend")) $("#fTrend").onchange=e=>{st.trending=e.target.checked;update();};
+  if($("#fPast")) $("#fPast").onchange=e=>{st.includePast=e.target.checked;update();};
   $("#fSort").onchange=e=>{st.sort=e.target.value;update();};
-  $("#fFrom").onchange=e=>{st.from=e.target.value;update();};
-  $("#fTo").onchange=e=>{st.to=e.target.value;update();};
+  if($("#fWhen")) $("#fWhen").onchange=e=>{ st.date=e.target.value; st.from=st.to=""; update(); };
   bindSearch($("#discSearch"), q=>{ st.q=q.trim(); if(st.q){ S.searches.unshift({q:st.q,t:Date.now()}); S.searches=S.searches.slice(0,200); E.persist(); } update(); });
   setTimeout(draw, 120);
 };
@@ -272,12 +309,11 @@ R.event = function(app, slug, src){
         <div class="ev-facts">
           <div class="fact"><span class="ic">${I.cal}</span><div><b>${esc(E.fDateLong(ev.startD))}</b><div class="small muted">${ev.isRecurring?"Every "+E.fmt(ev.startD,{weekday:"long"})+". Next date shown. ":""}${E.fmt(ev.endD,{day:"numeric"})!==E.fmt(ev.startD,{day:"numeric"})&&!ev.endAssumed?"Until "+esc(E.fDateLong(ev.endD)):""}</div></div></div>
           <div class="fact"><span class="ic">${I.clock}</span><div><b>${esc(E.timeLabel(ev))}</b><div class="small muted">East Africa Time${ev.endAssumed?". End time not listed":", ends "+esc(E.fTime(ev.endD))}</div></div></div>
-          <div class="fact"><span class="ic">${I.pin}</span><div><b>${esc(ev.venue)}</b><div class="small muted">${esc([ev.area!==ev.city?ev.area:"",ev.city].filter(Boolean).join(", "))} · <a class="link" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${mapQ}">Open in Maps</a></div></div></div>
+          <div class="fact"><span class="ic">${I.pin}</span><div><b>${esc(ev.venue)}</b><div class="small muted">${esc([ev.area!==ev.city?ev.area:"",ev.city].filter(Boolean).join(", "))} · <a class="link" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${mapQ}">Open in Maps</a></div><button class="btn btn-ghost btn-sm follow-btn" data-follow="${esc(ev.venue)}" aria-pressed="${E.isFollowing(ev.venue)}">${E.isFollowing(ev.venue)?I.check+" Following this place":I.bell+" Follow this place"}</button></div></div>
           <div class="fact"><span class="ic">${I.star}</span><div><b>${esc(E.priceText(ev))}</b><div class="small muted">${esc(ev.price&&ev.price.note||"Price information from the organizer. Evently does not sell tickets.")}</div></div></div>
         </div>
-        ${st==="upcoming"?`<div class="countdown" data-bigcd="${slug}" aria-label="Countdown">${["Days","Hours","Minutes","Seconds"].map(l=>`<div><b>00</b><span>${l}</span></div>`).join("")}</div>`:""}
-        <div class="counts"><span><b data-ct="interested">${c.interested}</b>Interested</span><span><b data-ct="going">${c.going}</b>Attending</span><span><b>${c.saves}</b>Saves</span><span><b>${c.shares}</b>Shares</span></div>
-        ${S.settings.baseline && ev.base ? `<p class="tiny muted">Counts include a demo engagement baseline until Evently's live database is connected. <a class="link" href="#radar">How this works</a></p>`:""}
+        ${st==="upcoming"?`<p class="starts-in" data-bigcd="${slug}"></p>`:""}
+        ${c.interested+c.going>0?`<p class="small muted counts-line">${c.going?`<b>${c.going}</b> going`:""}${c.going&&c.interested?" · ":""}${c.interested?`<b>${c.interested}</b> interested`:""}</p>`:""}
         <div class="actions">
           ${E.isActive(ev)||st==="postponed" ? `<button class="btn ${att==="interested"?"btn-dark":"btn-ghost"}" data-attend="interested" aria-pressed="${att==="interested"}">${I.star} ${att==="interested"?"Interested":"I'm interested"}</button>
           <button class="btn ${att==="going"?"btn-dark":"btn-primary"}" data-attend="going" aria-pressed="${att==="going"}">${I.check} ${att==="going"?"You're attending":"I'm attending"}</button>`:""}
@@ -311,6 +347,7 @@ R.event = function(app, slug, src){
     ${related.length?`<section class="section"><div class="sec-head"><div><span class="eyebrow">You might also like</span><h2>Related events</h2></div></div><div class="grid">${related.map(e=>E.card(e,{src:"related"})).join("")}</div></section>`:""}
   </div>`;
   app.onclick=e=>{
+    const fb=e.target.closest("[data-follow]"); if(fb){ const on=E.toggleFollow(fb.dataset.follow); fb.setAttribute("aria-pressed",on); fb.innerHTML=on?I.check+" Following this place":I.bell+" Follow this place"; E.toast(on?`You'll be notified when ${fb.dataset.follow} lists new events`:"Unfollowed"); if(on && !S.session && "Notification" in window && Notification.permission==="default"){ try{ Notification.requestPermission(); }catch(_){} } return; }
     const a=e.target.closest("[data-attend]"); if(a){ if(!requireLogin("mark your attendance")) return; const k=a.dataset.attend; const m=S.attend[S.session]=S.attend[S.session]||{}; if(m[slug]===k){ delete m[slug]; E.toast(k==="going"?"Attendance cancelled":"Removed from interested"); } else { m[slug]=k; E.toast(k==="going"?"You're attending. We'll remind you before it starts.":"Marked as interested"); } E.persist(); R.event(app,slug,"internal"); return; }
     const mv=e.target.closest("[data-view-media]"); if(mv){ viewer(gallery,+mv.dataset.viewMedia); }
   };
@@ -367,11 +404,11 @@ R.weekend = function(app){
   const slot=e=>`<div class="slot"><time>${E.fTime(e.startD).replace(":00","")}</time><div><a href="#event-${e.slug}" data-src="weekend">${esc(e.title)}</a><span class="small muted">${esc(e.venue)} · ${esc(E.priceText(e))}</span>${E.status(e)==="postponed"?`<span class="pill cancelled">Postponed</span>`:""}<button class="btn btn-ghost btn-sm add" data-plan="${e.slug}" aria-pressed="${S.plan.includes(e.slug)}">${S.plan.includes(e.slug)?"In your plan":"Add to plan"}</button></div></div>`;
   app.innerHTML=`<div class="wrap">
     <div class="page-head"><span class="eyebrow">Evently Weekend Planner</span><h1 style="font-size:clamp(2rem,4.5vw,3.2rem)">This weekend: ${esc(E.fmt(wk.fri,{day:"numeric",month:"long"}))} to ${esc(E.fmt(wk.sun,{day:"numeric",month:"long"}))}</h1><p class="muted">${all.length} events from Friday to Sunday. Set a budget and the kind of night you want, then build a plan you can share.</p></div>
-    <div class="panel" style="margin:20px 0;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));align-items:end">
+    <div style="margin:18px 0 22px">${E.fold("weekend","Filter events",(st.budget?1:0)+(st.loc?1:0)+st.types.length,`<div class="fold-row">
       <div class="field"><label for="wBudget">Budget per event</label><select class="input" id="wBudget"><option value="">Any budget</option><option value="0">Free only</option><option value="20000">Up to UGX 20,000</option><option value="50000">Up to UGX 50,000</option><option value="100000">Up to UGX 100,000</option></select></div>
       <div class="field"><label for="wLoc">Area</label><select class="input" id="wLoc"><option value="">Everywhere</option>${locs.map(l=>`<option ${st.loc===l?"selected":""}>${esc(l)}</option>`).join("")}</select></div>
       <div class="field" style="grid-column:1/-1"><span class="small" style="font-weight:600">Event type</span><div class="chips">${E.CATS().filter(c=>!c.virtual&&!c.hidden).map(c=>`<button class="chip" data-wt="${c.id}" aria-pressed="${st.types.includes(c.id)}">${esc(c.name)}</button>`).join("")}</div></div>
-    </div>
+</div><div class="qf-actions"><button type="button" class="btn btn-primary btn-sm" data-fold="weekend">Done</button><button type="button" class="btn btn-ghost btn-sm" id="wClear">Clear</button></div>`)}</div>
     <div class="days">${[["Friday",wk.fri],["Saturday",wk.sat],["Sunday",wk.sun]].map(([n,d])=>{ const l=day(d); return `<section class="day"><div class="day-head"><b>${n}</b><span class="mono small">${E.fmt(d,{day:"numeric",month:"short"})} · ${l.length}</span></div>${l.length?l.map(slot).join(""):`<p class="small muted" style="padding:16px">Nothing matches your filters on ${n}.</p>`}</section>`; }).join("")}</div>
     <div class="two-col section">
       <div style="display:grid;gap:28px;min-width:0">
@@ -389,6 +426,7 @@ R.weekend = function(app){
   $("#wBudget").value=st.budget;
   $("#wBudget").onchange=e=>{st.budget=e.target.value;R.weekend(app);};
   $("#wLoc").onchange=e=>{st.loc=e.target.value;R.weekend(app);};
+  $("#wClear").onclick=()=>{ Object.assign(st,{budget:"",loc:"",types:[]}); R.weekend(app); };
   app.onclick=e=>{
     const t=e.target.closest("[data-wt]"); if(t){ const id=t.dataset.wt; st.types=st.types.includes(id)?st.types.filter(x=>x!==id):[...st.types,id]; R.weekend(app); return; }
     const l=e.target.closest("[data-wloc]"); if(l){ st.loc=st.loc===l.dataset.wloc?"":l.dataset.wloc; R.weekend(app); return; }

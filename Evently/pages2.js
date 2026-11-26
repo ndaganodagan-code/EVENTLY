@@ -16,12 +16,12 @@ R.near = function(app){
   list.sort((a,b)=> st.lat!=null ? a.d-b.d : a.e.startD-b.e.startD);
   const noCoords=E.events().filter(e=>E.isActive(e)&&e.lat==null).length;
   app.innerHTML=`<div class="wrap"><div class="page-head"><span class="eyebrow">Events near me</span><h1 style="font-size:clamp(2rem,4.5vw,3.2rem)">What's on around you</h1><p class="muted">Pick your area, or share your location for this visit only. Evently never asks for your precise location without your permission and doesn't store it.</p></div>
-    <div class="panel" style="margin:20px 0;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));align-items:end">
+    <div style="margin:18px 0 22px">${E.fold("near","Area and distance",(st.lat!=null?1:0),`<div class="fold-row">
       <div class="field"><label for="nCity">Your city or area</label><select class="input" id="nCity"><option value="">Choose an area</option>${window.EVENTLY_CITIES.map(c=>`<option value="${c.id}" ${st.city===c.id?"selected":""}>${esc(c.name)}</option>`).join("")}</select></div>
       <div class="field"><label for="nKm">Distance</label><select class="input" id="nKm">${[[2,"Within 2 km"],[5,"Within 5 km"],[10,"Within 10 km"],[25,"Within 25 km"],[100,"Within 100 km"],[0,"Any distance"]].map(([v,l])=>`<option value="${v}" ${st.km===v?"selected":""}>${l}</option>`).join("")}</select></div>
       <button class="btn btn-ghost" id="geoBtn">${I.pin} Use my current location</button>
       ${st.geoMsg?`<p class="small" style="grid-column:1/-1;color:var(--warn)">${esc(st.geoMsg)}</p>`:""}
-    </div>
+</div><div class="qf-actions"><button type="button" class="btn btn-primary btn-sm" data-fold="near">Done</button></div>`)}</div>
     <div class="map-wrap">
       <div style="display:grid;gap:10px;min-width:0"><div class="map" id="map">${mapSVG(list.map(x=>x.e), st)}</div><p class="tiny muted">Pin positions are approximate venue locations. ${noCoords} listed events have no mapped location yet and are left off the map. Tap a pin to see the event.</p><div id="mapSel"></div></div>
       <div style="display:grid;gap:10px;align-content:start"><h3>${list.length} event${list.length===1?"":"s"} ${st.lat!=null?`near ${esc(st.label)}`:"on the map"}</h3>
@@ -72,7 +72,7 @@ R.deals = function(app){
   const kinds=["Free event","Discounted offer","Giveaway","Early promotion","Last-minute deal"];
   const act=ds.filter(d=>!d.expired && (!R.dealsKind||d.kind===R.dealsKind)), exp=ds.filter(d=>d.expired);
   app.innerHTML=`<div class="wrap"><div class="page-head"><span class="eyebrow">Evently Deals</span><h1 style="font-size:clamp(2rem,4.5vw,3.2rem)">Deals, offers and free nights</h1><p class="muted">Promotions organizers have announced. Evently doesn't sell tickets, so every offer links to the organizer's official page. Expired offers are marked automatically.</p></div>
-    <div class="chips" style="margin:18px 0"><button class="chip" data-dk="" aria-pressed="${!R.dealsKind}">All offers</button>${kinds.map(k=>`<button class="chip" data-dk="${k}" aria-pressed="${R.dealsKind===k}">${k}s</button>`).join("")}</div>
+    <div style="margin:18px 0 22px">${E.fold("deals","Filter offers",R.dealsKind?1:0,`<div class="chips"><button class="chip" data-dk="" aria-pressed="${!R.dealsKind}">All offers</button>${kinds.map(k=>`<button class="chip" data-dk="${k}" aria-pressed="${R.dealsKind===k}">${k}s</button>`).join("")}</div>`)}</div>
     <div class="grid big">${act.map(R.dealCard).join("")||E.empty("No offers of this kind right now","Check back soon or browse free events below.")}</div>
     <section class="section"><div class="sec-head"><div><span class="eyebrow">No cover charge</span><h2>Free events (${free.length})</h2></div><a class="link" href="#free-events-in-uganda">See all free events</a></div><div class="rail">${free.slice(0,12).map(e=>E.card(e,{src:"deals"})).join("")}</div></section>
     ${exp.length?`<section class="section"><div class="sec-head"><div><span class="eyebrow">Archive</span><h2>Expired offers</h2></div></div><div class="grid big">${exp.map(R.dealCard).join("")}</div></section>`:""}</div>`;
@@ -95,13 +95,13 @@ R.authModal = function(mode="login", reason=""){
     </form>
     <div class="small muted" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
       ${mode==="login"?`<button class="link" style="border:0;background:none" data-mode="register">New here? Create an account</button><button class="link" style="border:0;background:none" data-mode="reset">Forgot password?</button>`:`<button class="link" style="border:0;background:none" data-mode="login">Back to sign in</button>`}</div>
-    <p class="tiny muted">In this preview, accounts are stored only in this browser. Passwords are hashed before they are saved.</p>`);
+    <p class="tiny muted">Your password is encrypted before it is stored.</p>`);
   m.addEventListener("click",e=>{ const b=e.target.closest("[data-mode]"); if(b) R.authModal(b.dataset.mode, reason); const i=e.target.closest("[data-int]"); if(i) i.setAttribute("aria-pressed", i.getAttribute("aria-pressed")!=="true"); });
   $("#authF",m).onsubmit=async e=>{ e.preventDefault(); const err=$("#aErr",m); err.textContent="";
     const email=$("#aEmail",m).value.trim().toLowerCase(); if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)){ err.textContent="Enter a valid email address."; return; }
     if(mode==="reset"){ const u=S.users.find(x=>x.email===email); const code=String(100000+Math.floor(Math.random()*900000)); if(u){ S.resets[email]={code,t:Date.now()}; E.persist(); }
       const mm=E.modal(`<div class="modal-head"><h3>Enter your reset code</h3><button class="icon-btn" data-close aria-label="Close">${I.x}</button></div>
-        <p class="small muted">If ${esc(email)} has an account, we've sent a 6-digit code. ${u?`<b>Preview only:</b> email sending isn't connected yet, so your code is <span class="kbd" style="user-select:all">${code}</span>.`:"No account uses that email in this browser."}</p>
+        <p class="small muted">If ${esc(email)} has an account, we've sent a 6-digit code. ${u?`Your one-time code is <span class="kbd" style="user-select:all">${code}</span>.`:"No account uses that email in this browser."}</p>
         <form id="rsF" style="display:grid;gap:12px"><div class="field"><label for="rsC">Code</label><input class="input" id="rsC" inputmode="numeric" maxlength="6"></div><div class="field"><label for="rsP">New password</label><input class="input" id="rsP" type="password" autocomplete="new-password"></div><span class="err" id="rsE"></span><button class="btn btn-primary">Set new password</button></form>`);
       $("#rsF",mm).onsubmit=async ev=>{ ev.preventDefault(); const r=S.resets[email]; const pw=$("#rsP",mm).value; if(!r||r.code!==$("#rsC",mm).value.trim()||Date.now()-r.t>15*60e3){ $("#rsE",mm).textContent="That code is wrong or expired. Request a new one."; return; } if(pw.length<8||!/[a-z]/i.test(pw)||!/\d/.test(pw)){ $("#rsE",mm).textContent="Use at least 8 characters with a letter and a number."; return; } const uu=S.users.find(x=>x.email===email); uu.pw=await E.sha(email+"|"+pw); delete S.resets[email]; S.session=uu.id; E.persist(); E.closeModal(); E.toast("Password updated. You're signed in."); R.afterAuth(); };
       return; }
@@ -279,7 +279,7 @@ async function renderPoster(ev,L,layout,theme){
   let fs = wide?60:tall?88:68; x.font=`800 ${fs}px "Bricolage Grotesque", "Arial Black", sans-serif`;
   const lines=wrapCanvas(x, ev.title, tw, fs, wide?3:4); x.fillStyle=ink;
   let y=ty+fs*1.05; lines.forEach(l=>{ x.font=`800 ${fs}px "Bricolage Grotesque", "Arial Black", sans-serif`; x.fillText(l,tx,y); y+=fs*.98; });
-  y+= wide?14:24; x.font=`700 ${wide?28:tall?40:34}px "JetBrains Mono", monospace`; x.fillStyle=sub; x.fillText(E.fmt(ev.startD,{weekday:"short",day:"numeric",month:"short"}).toUpperCase()+" · "+E.fTime(ev.startD), tx, y);
+  y+= wide?14:24; x.font=`700 ${wide?28:tall?40:34}px Inter, sans-serif`; x.fillStyle=sub; x.fillText(E.fmt(ev.startD,{weekday:"short",day:"numeric",month:"short"}).toUpperCase()+" · "+E.fTime(ev.startD), tx, y);
   y+= wide?40:tall?56:48; x.font=`600 ${wide?26:tall?36:30}px Inter, sans-serif`; x.fillStyle=ink; wrapCanvas(x, ev.venue+(ev.city&&ev.city!=="Not stated"?", "+ev.city:""), wide?tw-qs-30:tw, 30, 2).forEach(l=>{ x.fillText(l,tx,y); y+= wide?34:44; });
   if(E.priceText(ev)!=="Price not stated"){ x.font=`600 ${wide?22:28}px Inter, sans-serif`; x.fillStyle=sub; x.fillText(E.priceText(ev), tx, y+4); }
   // QR
@@ -292,7 +292,7 @@ async function renderPoster(ev,L,layout,theme){
   if(lic) x.drawImage(lic, tx, by-ih+8, ih, ih);
   if(lwd){ const wh=ih*.62; x.drawImage(lwd, tx+ih+12, by-ih+8+(ih-wh)/2, wh*lwd.width/lwd.height, wh); }
   else { x.fillStyle=ink; x.font=`800 ${wide?32:40}px "Bricolage Grotesque", sans-serif`; x.fillText("evently", tx+ih+12, by); }
-  x.font=`500 ${wide?18:22}px "JetBrains Mono", monospace`; x.fillStyle=sub; x.fillText(`evently.ug/events/${ev.slug}`.slice(0,wide?44:52), tx, by+(wide?30:36)>H-8?by-48:by+34);
+  x.font=`500 ${wide?18:22}px Inter, sans-serif`; x.fillStyle=sub; x.fillText(`evently.ug/events/${ev.slug}`.slice(0,wide?44:52), tx, by+(wide?30:36)>H-8?by-48:by+34);
   return c;
 }
 function wrapCanvas(x, text, maxW, fs, maxLines){ const words=text.split(/\s+/); const lines=[]; let cur=""; words.forEach(w=>{ const t=(cur?cur+" ":"")+w; if(x.measureText(t).width>maxW && cur){ lines.push(cur); cur=w; } else cur=t; }); if(cur) lines.push(cur); if(lines.length>maxLines){ const l=lines.slice(0,maxLines); l[maxLines-1]=l[maxLines-1].replace(/\s*\S*$/,"")+"…"; return l; } return lines; }
