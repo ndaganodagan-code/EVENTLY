@@ -12,13 +12,15 @@ const HOUR = 3600e3, DAY = 86400e3;
 
 /* ---------- Storage ---------- */
 const KEY = "evently.v1";
-const DEFAULT_SETTINGS = {weights:{views:1,shares:4,saves:3,interested:2,going:3},recentBoost:2,recentDays:7,baseline:true};
+const DEFAULT_SETTINGS = {weights:{views:1,shares:4,saves:3,interested:2,going:3},recentBoost:2,recentDays:7,baseline:false};
 function blank(){return {users:[],session:null,saved:{},attend:{},views:{},shares:{},submissions:[],overrides:{},reports:[],media:[],notifs:{},prefs:{},audit:[],settings:JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),cats:{},viewedCats:{},reminded:{},plan:[],guestInterests:[],searches:[],device:null,resets:{},newCats:[]};}
 let S = blank();
 try { const raw = localStorage.getItem(KEY); if (raw) S = Object.assign(blank(), JSON.parse(raw)); } catch(e) {}
 if (!S.device) S.device = "d" + Math.random().toString(36).slice(2,10);
 S.settings = Object.assign(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), S.settings||{});
 S.settings.weights = Object.assign({}, DEFAULT_SETTINGS.weights, S.settings.weights||{});
+if (!S.settings.v2){ S.settings.baseline=false; S.settings.v2=true; }
+S.follows = S.follows || {}; S.seenAt = S.seenAt || {};
 let saveTimer = null;
 function persist(){ clearTimeout(saveTimer); saveTimer = setTimeout(()=>{ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){ toast("Your browser storage is full. Remove some uploads and try again."); } }, 60); }
 
@@ -131,7 +133,7 @@ function realCounts(slug){
 }
 function counts(ev){ const r=realCounts(ev.slug); return {views:r.views+base(ev,"views"),shares:r.shares+base(ev,"shares"),saves:r.saves+base(ev,"saves"),interested:r.interested+base(ev,"interested"),going:r.going+base(ev,"going"),recent:r.recent+base(ev,"recent")}; }
 function score(ev){ const c=counts(ev), w=S.settings.weights; return c.views*w.views+c.shares*w.shares+c.saves*w.saves+c.interested*w.interested+c.going*w.going+c.recent*S.settings.recentBoost; }
-function trending(list){ const act=list.filter(isActive); const sc=act.map(e=>({e,s:score(e)})).sort((a,b)=>b.s-a.s); const max=sc[0]?sc[0].s:1; return sc.map(x=>Object.assign(x,{pct:Math.max(4,Math.round(100*x.s/max))})); }
+function trending(list){ const act=list.filter(isActive); const sc=act.map(e=>({e,s:score(e)})).sort((a,b)=>(b.s-a.s)||((b.e.base||0)-(a.e.base||0))); const max=sc[0]?sc[0].s:1; return sc.map(x=>Object.assign(x,{pct:Math.max(4,Math.round(100*x.s/max))})); }
 function trackView(slug, src){ (S.views[slug]=S.views[slug]||[]).push({t:Date.now(),v:viewerId(),src:src||"direct"}); const ev=bySlug(slug); if(ev){ const vc=S.viewedCats[viewerId()]=S.viewedCats[viewerId()]||{}; vc[ev.cat]=(vc[ev.cat]||0)+1; } persist(); }
 function trackShare(slug, ch){ (S.shares[slug]=S.shares[slug]||[]).push({t:Date.now(),v:viewerId(),ch}); persist(); }
 const isSaved = slug => !!(S.session && (S.saved[S.session]||[]).includes(slug));
@@ -141,6 +143,16 @@ const attendState = slug => S.session ? (S.attend[S.session]||{})[slug] : null;
 function notify(uid, text, link, kind){ const p=prefs(uid); if(kind && p[kind]===false) return; (S.notifs[uid]=S.notifs[uid]||[]).unshift({id:"n"+Date.now()+Math.random().toString(36).slice(2,5),t:Date.now(),text,link,read:false,kind}); S.notifs[uid]=S.notifs[uid].slice(0,80); persist(); if(uid===S.session){ updateBell(); if(p.push && "Notification" in window && Notification.permission==="granted"){ try{ new Notification("Evently",{body:text}); }catch(e){} } } }
 function prefs(uid){ return Object.assign({saved:true,going:true,interested:true,changes:true,cancellations:true,newMatches:true,email:true,push:false}, S.prefs[uid]||{}); }
 function usersFollowing(slug){ return S.users.filter(u=>(S.saved[u.id]||[]).includes(slug) || (S.attend[u.id]||{})[slug]); }
+function followKey(){ return S.session || "guest"; }
+function follows(){ return S.follows[followKey()] || []; }
+function isFollowing(venue){ return follows().includes(venue); }
+function toggleFollow(venue){ const k=followKey(); const l=S.follows[k]||[]; if(l.includes(venue)) S.follows[k]=l.filter(v=>v!==venue); else { S.follows[k]=[...l,venue]; (S.seenAt[k]=S.seenAt[k]||{}); events().filter(e=>e.venue===venue).forEach(e=>S.seenAt[k][e.slug]=1); } persist(); return S.follows[k].includes(venue); }
+function followSweep(){ const k=followKey(); const l=follows(); if(!l.length) return; const seen=S.seenAt[k]=S.seenAt[k]||{}; let fresh=[];
+  events().filter(e=>l.includes(e.venue) && isActive(e) && !seen[e.slug]).forEach(e=>{ seen[e.slug]=1; fresh.push(e); });
+  if(!fresh.length) return; persist();
+  fresh.forEach(e=>{ const text=`New at ${e.venue}: ${e.title}, ${fDate(e.startD)}.`;
+    if(S.session) notify(S.session, text, "#event-"+e.slug, "newMatches");
+    else if("Notification" in window && Notification.permission==="granted"){ try{ new Notification("Evently", {body:text, icon:"logo-icon.png"}); }catch(_){} } }); }
 function reminderSweep(){
   const u=me(); if(!u) return; const now=Date.now();
   const mine = new Set([...(S.saved[u.id]||[]), ...Object.keys(S.attend[u.id]||{})]);
@@ -158,7 +170,8 @@ const ugx = n => "UGX " + Number(n).toLocaleString("en-UG");
 function priceText(ev){ if(!ev.price) return "Price not stated"; if(ev.price.free) return "Free entry"; if(ev.price.from) return "From " + ugx(ev.price.from); return "Price not stated"; }
 function statusLabel(st){ return {upcoming:"Upcoming",live:"Happening now",completed:"Event completed",cancelled:"Cancelled",postponed:"Postponed"}[st]; }
 function countdownParts(ms){ const s=Math.max(0,Math.floor(ms/1000)); return {d:Math.floor(s/86400),h:Math.floor(s%86400/3600),m:Math.floor(s%3600/60),s:s%60}; }
-function miniCountdown(ev){ const st=status(ev); if(st==="live") return {text:"Happening now",live:true}; if(st==="completed") return {text:"Event completed"}; if(st==="cancelled") return {text:"Cancelled"}; if(st==="postponed") return {text:"Postponed"}; const p=countdownParts(ev.startD-Date.now()); return {text: p.d>0 ? `${p.d}d ${String(p.h).padStart(2,"0")}h ${String(p.m).padStart(2,"0")}m` : `${String(p.h).padStart(2,"0")}:${String(p.m).padStart(2,"0")}:${String(p.s).padStart(2,"0")}`}; }
+function miniCountdown(ev){ const st=status(ev); if(st==="live") return {text:"Happening now",live:true}; if(st==="completed") return {text:"Ended"}; if(st==="cancelled") return {text:"Cancelled"}; if(st==="postponed") return {text:"Postponed"};
+  const d=Math.round((kDayStart(ev.startD)-kDayStart(new Date()))/DAY); return {text: d<=0?"Today":d===1?"Tomorrow":d<7?"In "+d+" days":d<14?"Next week":""}; }
 const timeLabel = ev => ev.timeTBC ? `${fTime(ev.startD)} (time to be confirmed)` : fTime(ev.startD);
 const verifyBadge = v => v==="verified" ? `<span class="verify v">Verified listing</span>` : v==="partial" ? `<span class="verify p">Partly confirmed</span>` : v==="demo" ? `<span class="verify d">Demo content</span>` : `<span class="verify v">Submitted by organizer</span>`;
 
@@ -173,6 +186,7 @@ const I = {
   wa:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.2.1-.1 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.1 5.1 0 0 0 1.1 2.7 11.7 11.7 0 0 0 4.5 4c1.7.7 2.3.8 3.2.6.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.3-.2-.5-.3Z"/></svg>',
   link:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1"/></svg>',
   star:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"/></svg>',
+  bell:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>',
   check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
   ext:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>',
   user:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
@@ -251,15 +265,13 @@ const eventURL = slug => `${SITE}/events/${slug}`;
 
 function card(ev, opts={}){
   const st=status(ev); const cd=miniCountdown(ev); const saved=isSaved(ev.slug);
-  const flags = [];
-  if (opts.rank) flags.push(`<span class="flag hot">#${opts.rank} Trending</span>`);
-  else if (ev.featured) flags.push(`<span class="flag hot">Featured</span>`);
-  if (st==="live") flags.push(`<span class="flag ok">Happening now</span>`);
-  if (st==="cancelled") flags.push(`<span class="flag bad">Cancelled</span>`);
-  if (st==="postponed") flags.push(`<span class="flag bad">Postponed</span>`);
-  if (ev.isRecurring) flags.push(`<span class="flag">Weekly</span>`);
-  if (ev.tickets && safeUrl(ev.tickets.url) && isActive(ev)) flags.push(`<span class="flag">Tickets online</span>`);
-  if (ev.verify==="demo") flags.push(`<span class="flag demo">Demo</span>`);
+  let flag="";
+  if (st==="cancelled") flag=`<span class="flag bad">Cancelled</span>`;
+  else if (st==="postponed") flag=`<span class="flag bad">Postponed</span>`;
+  else if (ev.verify==="demo") flag=`<span class="flag demo">Demo</span>`;
+  else if (opts.rank) flag=`<span class="flag hot">#${opts.rank}</span>`;
+  const flags=[flag];
+  const tix = ev.tickets && safeUrl(ev.tickets.url) && isActive(ev);
   return `<article class="card fade-in">
     <a class="cover" href="#event-${ev.slug}" data-src="${opts.src||"card"}" aria-label="${esc(ev.title)}"><div class="poster">${posterHTML(ev,{text:false})}<div class="flags">${flags.join("")}</div></div></a>
     <button class="save-fab" data-save="${ev.slug}" aria-pressed="${saved}" aria-label="${saved?"Remove from saved":"Save event"}">${saved?I.heartF:I.heart}</button>
@@ -268,9 +280,22 @@ function card(ev, opts={}){
       <h3><a href="#event-${ev.slug}" data-src="${opts.src||"card"}">${esc(ev.title)}</a></h3>
       <div class="meta">${I.cal}<span>${esc(fDate(ev.startD))} · ${esc(fTime(ev.startD))}</span></div>
       <div class="meta">${I.pin}<span>${esc(ev.venue)}${ev.city && ev.city!=="Kampala" ? ", "+esc(ev.city):""}</span></div>
+      ${tix?`<div class="meta tix-note">${I.ext}<span>Tickets sold online</span></div>`:""}
     </div>
     <div class="card-foot"><span class="price">${esc(priceText(ev))}</span><span class="cd-mini ${cd.live?"live":""}" data-cd="${ev.slug}">${esc(cd.text)}</span></div>
   </article>`;
+}
+const foldOpen={};
+function fold(id, label, count, inner){ const open=!!foldOpen[id];
+  return `<div class="fold"><button type="button" class="fold-btn" data-fold="${id}" aria-expanded="${open}" aria-controls="fold-${id}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M7 12h10M10 18h4"/></svg>${esc(label)}<span class="qf-n" id="foldn-${id}" ${count?"":"hidden"}>${count||""}</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button><div class="fold-panel" id="fold-${id}" ${open?"":"hidden"}>${inner}</div></div>`; }
+function foldCount(id,n){ const b=document.getElementById("foldn-"+id); if(b){ b.hidden=!n; b.textContent=n||""; } }
+document.addEventListener("click",e=>{ const b=e.target.closest("[data-fold]"); if(!b) return; const id=b.dataset.fold; foldOpen[id]=!foldOpen[id]; const p=document.getElementById("fold-"+id); if(p) p.hidden=!foldOpen[id]; document.querySelectorAll(`.fold-btn[data-fold="${id}"]`).forEach(x=>x.setAttribute("aria-expanded",String(!!foldOpen[id]))); });
+function tile(ev, opts={}){
+  const st=status(ev); const cd=miniCountdown(ev);
+  const badge = st==="cancelled"?`<span class="flag bad">Cancelled</span>`:st==="postponed"?`<span class="flag bad">Postponed</span>`:ev.verify==="demo"?`<span class="flag demo">Demo</span>`:"";
+  return `<a class="tile${opts.rank?" ranked":""}" href="#event-${ev.slug}" data-src="${opts.src||"tile"}">${opts.rank?`<span class="rank-n" aria-hidden="true">${opts.rank}</span>`:""}
+    <span class="tile-poster poster">${posterHTML(ev,{text:false})}${badge?`<span class="flags">${badge}</span>`:""}</span>
+    <span class="tile-body"><b>${esc(ev.title)}</b><span>${esc(cd.text&&cd.text!=="Ended"?cd.text:fDate(ev.startD))} · ${esc(fTime(ev.startD))}</span><span>${esc(ev.venue)}</span></span></a>`;
 }
 function row(ev, extra=""){
   return `<div class="row fade-in"><a href="#event-${ev.slug}" class="poster" style="display:block">${posterHTML(ev,{text:false})}</a>
@@ -300,6 +325,6 @@ async function saveFile(filename, blob){
 
 window.EV = {$,$$,esc,safeUrl,SITE,HOUR,DAY,S,persist,putBlob,delBlob,mediaURL,resizeImage,loadAllBlobs,parseLocal,kParts,kDate,kDayStart,fmt,fDate,fDateLong,fTime,ymd,toLocalInput,weekendRange,
   CATS,catName,venueInfo,hash,events,allEvents,invalidate,bySlug,status,isActive,me,viewerId,sha,counts,realCounts,score,trending,trackView,trackShare,isSaved,attendState,
-  notify,prefs,usersFollowing,reminderSweep,updateBell,audit,ugx,priceText,statusLabel,countdownParts,miniCountdown,timeLabel,verifyBadge,I,posterArt,posterSVG,posterHTML,posterSrc,hostOf,isArchived,
+  notify,prefs,usersFollowing,reminderSweep,follows,isFollowing,toggleFollow,followSweep,tile,fold,foldCount,updateBell,audit,ugx,priceText,statusLabel,countdownParts,miniCountdown,timeLabel,verifyBadge,I,posterArt,posterSVG,posterHTML,posterSrc,hostOf,isArchived,
   toast,modal,closeModal,copyText,eventURL,card,row,empty,skeletonGrid,setHead,saveFile,PALETTES,wrapWords,DEFAULT_SETTINGS};
 })();
