@@ -28,7 +28,7 @@ This folder sets up the Evently back end in Supabase.
 | saves, attendance, follows | Favourites, going / interested, and followed places, per member |
 | notifications | Messages to members, including "New at <place>" when an event at a followed place is approved |
 | reports, audit_log | Reports from members, and a record of admin actions |
-| event_stats, event_counts | Anonymous view and share counts, plus public going / interested / saves totals |
+| event_stats, event_counts() | Anonymous view and share counts, plus public going / interested / saves totals |
 
 ## Access rules
 

@@ -183,17 +183,20 @@ end;
 $$;
 grant execute on function public.bump_stat(text, text) to anon, authenticated;
 
--- Public counts of going / interested / saves per event.
-create view public.event_counts with (security_invoker = false) as
+-- Public counts of going / interested / saves per event, without exposing who.
+create function public.event_counts()
+returns table (slug text, going bigint, interested bigint, saves bigint, views int, shares int)
+language sql stable security definer set search_path = public as $$
   select e.slug,
-    (select count(*) from attendance a where a.event_slug = e.slug and a.kind = 'going') as going,
-    (select count(*) from attendance a where a.event_slug = e.slug and a.kind = 'interested') as interested,
-    (select count(*) from saves s where s.event_slug = e.slug) as saves,
-    coalesce(st.views, 0) as views,
-    coalesce(st.shares, 0) as shares
+    (select count(*) from attendance a where a.event_slug = e.slug and a.kind = 'going'),
+    (select count(*) from attendance a where a.event_slug = e.slug and a.kind = 'interested'),
+    (select count(*) from saves s where s.event_slug = e.slug),
+    coalesce(st.views, 0),
+    coalesce(st.shares, 0)
   from events e left join event_stats st on st.event_slug = e.slug
   where e.review = 'approved';
-grant select on public.event_counts to anon, authenticated;
+$$;
+grant execute on function public.event_counts() to anon, authenticated;
 
 -- ---------- Row level security ----------
 alter table public.profiles enable row level security;
@@ -261,7 +264,7 @@ $$;
 create trigger notify_followers after insert or update of review on public.events
   for each row execute function public.notify_followers();
 
-create function public.touch_updated_at() returns trigger language plpgsql as $$
+create function public.touch_updated_at() returns trigger language plpgsql set search_path = public as $$
 begin new.updated_at := now(); return new; end; $$;
 create trigger events_touch before update on public.events
   for each row execute function public.touch_updated_at();
