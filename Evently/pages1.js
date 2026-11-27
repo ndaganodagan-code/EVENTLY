@@ -331,6 +331,7 @@ R.event = function(app, slug, src){
         <section style="display:grid;gap:12px"><div class="sec-head" style="margin:0"><h2>Gallery</h2>${st==="completed"&&(ev.community||ev.owner)?`<a class="link" href="#gallery-${slug}">Open Aftermovie</a>`:""}</div>
           ${gallery.length?`<div class="gallery">${gallery.map((g,i)=>`<button data-view-media="${i}" aria-label="Open media ${i+1}">${g.type==="video"?`<video src="${g.url}" muted playsinline></video>`:`<img src="${g.url}" alt="" loading="lazy">`}</button>`).join("")}</div>`
           : `<div class="empty" style="padding:28px"><p>No photos yet. ${st==="completed"&&ev.community?"Were you there? Add your photos in the Aftermovie gallery.":"Organizers can add promotional photos and videos from their dashboard."}</p></div>`}</section>
+        ${canRate(ev,st)?`<div id="reviewsBox"></div>`:""}
         ${E.cloud()?`<div id="whoGoing"></div>`:pub.length?`<section style="display:grid;gap:12px"><h2>Who's going</h2><div class="chips">${pub.map(p=>`<span class="chip">${p.avatar&&E.mediaURL(p.avatar)?`<img src="${E.mediaURL(p.avatar)}" alt="" style="width:22px;height:22px;border-radius:50%;object-fit:cover">`:I.user}${esc(p.name)}</span>`).join("")}</div><p class="tiny muted">People appear by their party name. Anyone can hide theirs in their account.</p></section>`:""}
       </div>
       <aside style="display:grid;gap:16px">
@@ -355,6 +356,7 @@ R.event = function(app, slug, src){
     const mv=e.target.closest("[data-view-media]"); if(mv){ viewer(gallery,+mv.dataset.viewMedia); }
   };
   const pa=$("#pubAtt"); if(pa) pa.onchange=()=>{ const uu=E.me(); if(uu){ uu.publicAttendance=pa.checked; E.persist(); E.toast(pa.checked?"Your party name shows on events":"Your party name is hidden"); R.event(app,slug,"internal"); } };
+  const rb=$("#reviewsBox"); if(rb) loadReviews(rb, ev);
   $("#shareBtn").onclick=()=>shareModal(ev);
   $("#waBtn").addEventListener("click",()=>E.trackShare(slug,"whatsapp"));
   $("#reportBtn").onclick=()=>reportModal(ev);
@@ -388,6 +390,48 @@ function viewer(items, i){
   document.body.appendChild(v); try{ v.requestFullscreen && v.requestFullscreen().catch(()=>{}); }catch(e){}
 }
 R.viewer=viewer;
+/* ---------- Ratings and reviews (members rate an event once it has started) ---------- */
+function canRate(ev, st){ return st!=="cancelled" && ev.startD.getTime()<=Date.now() && ev.verify!=="demo"; }
+const STAR_F='<svg viewBox="0 0 24 24" fill="currentColor"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"/></svg>';
+const starsHTML=(n,label)=>`<span class="stars" role="img" aria-label="${label||`${n} out of 5 stars`}">${[1,2,3,4,5].map(i=>`<span class="${i<=Math.round(n)?"":"off"}">${STAR_F}</span>`).join("")}</span>`;
+const RV={
+  async list(slug){ if(E.cloud()) return await window.EVCLOUD.reviews(slug);
+    return (S.reviews||[]).filter(r=>r.slug===slug).map(r=>{ const u=S.users.find(x=>x.id===r.by); return u&&!u.suspended?{id:r.id,name:u.name,stars:r.stars,body:r.body,t:r.t,went:(S.attend[r.by]||{})[slug]==="going",mine:r.by===S.session}:null; })
+      .filter(Boolean).sort((a,b)=>(b.mine-a.mine)||(b.t-a.t)); },
+  async save(slug,stars,body){ if(E.cloud()) return window.EVCLOUD.saveReview(slug,stars,body);
+    const ex=(S.reviews=S.reviews||[]).find(r=>r.slug===slug&&r.by===S.session);
+    if(ex) Object.assign(ex,{stars,body,t:Date.now()}); else S.reviews.unshift({id:"rv"+Date.now().toString(36),slug,by:S.session,stars,body,t:Date.now()});
+    E.persist(); return true; },
+  async remove(id){ if(E.cloud()) return window.EVCLOUD.deleteReview(id); S.reviews=(S.reviews||[]).filter(r=>r.id!==id); E.persist(); return true; }
+};
+async function loadReviews(box, ev){
+  const list=await RV.list(ev.slug); if(!box.isConnected) return;
+  if(!list){ box.innerHTML=`<section class="panel"><h2>Ratings and reviews</h2><p class="small muted">Reviews could not load right now. Refresh the page to try again.</p></section>`; return; }
+  const u=E.me(), mine=list.find(r=>r.mine), n=list.length, avg=n?list.reduce((s,r)=>s+r.stars,0)/n:0, admin=u&&u.role==="admin";
+  let pick=mine?mine.stars:0;
+  box.innerHTML=`<section class="panel" id="reviews"><h2>Ratings and reviews</h2>
+    ${n?`<div class="rv-sum"><b>${avg.toFixed(1)}</b><div>${starsHTML(avg,`Rated ${avg.toFixed(1)} out of 5`)}<div class="small muted">${n} rating${n===1?"":"s"} from Evently members</div></div></div>`:`<p class="small muted">No ratings yet. Were you there? Be the first to rate it.</p>`}
+    ${u?`<form id="rvF" style="display:grid;gap:10px"><span class="small" style="font-weight:600">${mine?"Your rating":"How was it?"}</span>
+        <div class="star-pick" role="group" aria-label="Your rating">${[1,2,3,4,5].map(i=>`<button type="button" data-star="${i}" aria-label="${i} star${i>1?"s":""}" class="${i<=pick?"on":""}">${STAR_F}</button>`).join("")}</div>
+        <textarea class="input" id="rvT" rows="3" maxlength="600" placeholder="What was the music, crowd and organisation like? (optional)" style="height:auto;padding:10px 12px">${esc(mine?mine.body:"")}</textarea>
+        <span class="err" id="rvErr" role="alert"></span>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary btn-sm">${mine?"Update my review":"Post my review"}</button>${mine?`<button type="button" class="btn btn-ghost btn-sm" data-rv-del="${esc(String(mine.id))}">Delete my review</button>`:""}</div>
+        <span class="tiny muted">Your review shows with your party name, ${esc(u.name)}.</span></form>`
+      :`<button class="btn btn-ghost btn-sm" id="rvLogin" style="justify-self:start">${I.star} Sign in to rate this event</button>`}
+    ${n?`<div>${list.map(r=>`<div class="rv"><div class="rv-head">${starsHTML(r.stars)}<b>${esc(r.name)}</b>${r.went?`<span class="pill neutral">Was going</span>`:""}<span class="muted">${esc(E.fDate(new Date(r.t)))}</span>${admin&&!r.mine?`<button class="link small" style="border:0;background:none;margin-left:auto" data-rv-del="${esc(String(r.id))}">Remove</button>`:""}</div>${r.body?`<p>${esc(r.body)}</p>`:""}</div>`).join("")}</div>`:""}
+  </section>`;
+  // Search engines: add the rating to this event's structured data
+  const ld=$("#ld-json"); if(ld){ try{ const d=JSON.parse(ld.textContent); delete d.aggregateRating; delete d.review;
+    if(n){ d.aggregateRating={"@type":"AggregateRating",ratingValue:+avg.toFixed(1),reviewCount:n,ratingCount:n,bestRating:5,worstRating:1};
+      d.review=list.slice(0,5).map(r=>({"@type":"Review",author:{"@type":"Person",name:r.name},datePublished:new Date(r.t).toISOString().slice(0,10),reviewRating:{"@type":"Rating",ratingValue:r.stars,bestRating:5,worstRating:1},...(r.body?{reviewBody:r.body}:{})})); }
+    ld.textContent=JSON.stringify(d).replace(/</g,"\\u003c"); }catch(e){} }
+  const lg=$("#rvLogin",box); if(lg) lg.onclick=()=>requireLogin("rate this event");
+  box.onclick=async e=>{ const s=e.target.closest("[data-star]"); if(s){ pick=+s.dataset.star; $$("[data-star]",box).forEach(b=>b.classList.toggle("on",+b.dataset.star<=pick)); return; }
+    const d=e.target.closest("[data-rv-del]"); if(d){ d.disabled=true; const id=d.dataset.rvDel; if(await RV.remove(/^\d+$/.test(id)?+id:id)){ E.toast("Review removed"); loadReviews(box,ev); } else d.disabled=false; } };
+  const f=$("#rvF",box); if(f) f.onsubmit=async e=>{ e.preventDefault(); if(!pick){ $("#rvErr",box).textContent="Tap the stars to choose a rating."; return; }
+    const btn=f.querySelector(".btn-primary"); btn.disabled=true; const ok=await RV.save(ev.slug,pick,$("#rvT",box).value.trim().slice(0,600)); btn.disabled=false;
+    if(ok){ E.toast(mine?"Review updated":"Thanks for rating this event"); loadReviews(box,ev); } };
+}
 function requireLogin(what){ if(E.me()) return true; R.authModal("login", `Sign in to ${what}.`); return false; }
 R.requireLogin=requireLogin;
 

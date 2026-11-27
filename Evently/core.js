@@ -13,7 +13,7 @@ const HOUR = 3600e3, DAY = 86400e3;
 /* ---------- Storage ---------- */
 const KEY = "evently.v1";
 const DEFAULT_SETTINGS = {weights:{views:1,shares:4,saves:3,interested:2,going:3},recentBoost:2,recentDays:7,baseline:false};
-function blank(){return {users:[],session:null,saved:{},attend:{},views:{},shares:{},submissions:[],overrides:{},reports:[],media:[],notifs:{},prefs:{},audit:[],settings:JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),cats:{},viewedCats:{},reminded:{},plan:[],guestInterests:[],searches:[],device:null,resets:{},newCats:[]};}
+function blank(){return {users:[],session:null,saved:{},attend:{},views:{},shares:{},submissions:[],overrides:{},reports:[],media:[],notifs:{},prefs:{},audit:[],settings:JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),cats:{},viewedCats:{},reminded:{},plan:[],guestInterests:[],searches:[],device:null,resets:{},newCats:[],reviews:[]};}
 let S = blank();
 try { const raw = localStorage.getItem(KEY); if (raw) S = Object.assign(blank(), JSON.parse(raw)); } catch(e) {}
 if (!S.device) S.device = "d" + Math.random().toString(36).slice(2,10);

@@ -237,6 +237,12 @@ C.countsFor = function(slug, local){
     views:+s.views + newViews, shares:+s.shares + newShares, recent:local.recent};
 };
 C.attendees = async slug => { if (!C.on || !sb) return null; const {data, error} = await sb.rpc("public_attendees", {event:slug}); return error ? null : data; };
+C.reviews = async slug => { if (!C.on || !sb) return null; const {data, error} = await sb.rpc("event_reviews", {event:slug}); if (error) return null;
+  return (data||[]).map(r => ({id:r.id, name:r.name, stars:r.stars, body:r.body||"", t:Date.parse(r.created_at), went:!!r.went, mine:!!r.mine})); };
+C.saveReview = async (slug, stars, body) => { if (!C.on || !sb || !uid) return false;
+  const {error} = await sb.from("reviews").upsert({event_slug:slug, user_id:uid, stars, body}, {onConflict:"event_slug,user_id"});
+  if (error) { E.toast(/row-level security/i.test(error.message) ? "You can rate this event once it has started." : "Your rating was not saved. Check your connection and try again."); return false; } return true; };
+C.deleteReview = async id => { if (!C.on || !sb) return false; const {error} = await sb.from("reviews").delete().eq("id", id); if (error) { E.toast("That review was not removed. Try again."); return false; } return true; };
 C.bump = (slug, field) => { if (C.on && sb) sb.rpc("bump_stat", {slug, field}).then(() => {}, () => {}); };
 
 /* ---------- Sign in, sign up, reset ---------- */
