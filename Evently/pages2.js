@@ -80,9 +80,11 @@ R.deals = function(app){
 };
 
 /* ---------- Auth ---------- */
+const GOOGLE_G='<svg viewBox="0 0 48 48" width="18" height="18" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
 R.authModal = function(mode="login", reason=""){
   const m=E.modal(`<div class="modal-head"><h3>${mode==="login"?"Sign in to Evently":mode==="register"?"Create your Evently account":"Reset your password"}</h3><button class="icon-btn" data-close aria-label="Close">${I.x}</button></div>
     ${reason?`<p class="notice">${I.info}<span>${esc(reason)}</span></p>`:""}
+    ${mode!=="reset"&&window.EVCLOUD&&EVCLOUD.googleReady&&EVCLOUD.googleReady()?`<button type="button" class="btn btn-ghost" id="gBtn" style="width:100%">${GOOGLE_G} Continue with Google</button><div class="or-line"><span>or use your email</span></div>`:""}
     <form id="authF" style="display:grid;gap:12px" novalidate>
       ${mode==="register"?`<div class="field"><label for="aName">Party name</label><input class="input" id="aName" autocomplete="nickname" maxlength="40" placeholder="e.g. DJ Rolex" required><span class="tiny muted">Shown to others on events you go to. Use a nickname, not your real name.</span></div>`:""}
       <div class="field"><label for="aEmail">Email</label><input class="input" id="aEmail" type="email" autocomplete="email" required></div>
@@ -97,6 +99,7 @@ R.authModal = function(mode="login", reason=""){
       ${mode==="login"?`<button class="link" style="border:0;background:none" data-mode="register">New here? Create an account</button><button class="link" style="border:0;background:none" data-mode="reset">Forgot password?</button>`:`<button class="link" style="border:0;background:none" data-mode="login">Back to sign in</button>`}</div>
     <p class="tiny muted">${E.cloud()?"Your account is stored securely with Evently.":"Your password is encrypted before it is stored."}</p>`);
   m.addEventListener("click",e=>{ const b=e.target.closest("[data-mode]"); if(b) R.authModal(b.dataset.mode, reason); const i=e.target.closest("[data-int]"); if(i) i.setAttribute("aria-pressed", i.getAttribute("aria-pressed")!=="true"); });
+  const gb=$("#gBtn",m); if(gb) gb.onclick=()=>{ gb.disabled=true; window.EVCLOUD.googleSignIn().finally(()=>{ gb.disabled=false; }); };
   $("#authF",m).onsubmit=async e=>{ e.preventDefault(); const err=$("#aErr",m); err.textContent="";
     const email=$("#aEmail",m).value.trim().toLowerCase(); if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)){ err.textContent="Enter a valid email address."; return; }
     if(E.cloud()) return window.EVCLOUD.authSubmit(mode, m, email);

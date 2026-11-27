@@ -289,6 +289,7 @@ async function afterSignIn(user){
   try { await pullUser(); } catch(e) { console.warn("[Evently]", e); }
   E.invalidate(); takeSnap(); snap.follows = serverFollows.slice(); E.persist(); if (R()) R().header();
   if (uid) C.sync(); // pushes follows saved before signing in
+  setTimeout(partyNameModal, 600);
 }
 function newPasswordModal(){
   const m = E.modal(`<div class="modal-head"><h3>Set a new password</h3><button class="icon-btn" data-close aria-label="Close">${E.I.x}</button></div>
@@ -299,12 +300,36 @@ function newPasswordModal(){
     E.closeModal(); E.toast("Password updated. You're signed in."); };
 }
 
+/* ---------- Google sign-in (shown only when it is switched on in Supabase and the site has a web address) ---------- */
+C.google = false;
+C.googleReady = () => C.on && C.google && /^https?:$/.test(location.protocol);
+async function checkProviders(){
+  try { const r = await withTimeout(fetch(URL_ + "/auth/v1/settings", {headers:{apikey:KEY}}), 6000); const j = await r.json(); C.google = !!(j.external && j.external.google); }
+  catch(e) { C.google = false; }
+}
+C.googleSignIn = async function(){
+  const {error} = await sb.auth.signInWithOAuth({provider:"google", options:{redirectTo:redirect()}});
+  if (error) E.toast("Google sign-in didn't start. Try again or use your email.");
+};
+function partyNameModal(){
+  const u = E.me(); if (!u || !(S.prefs[uid] || {}).needsPartyName || document.getElementById("pnF")) return;
+  const m = E.modal(`<div class="modal-head"><h3>Choose your party name</h3></div>
+    <form id="pnF" style="display:grid;gap:12px"><p class="small muted">This is the name other people see on events you go to and on your reviews. Use a nickname, not your real name.</p>
+    <div class="field"><label for="pnN">Party name</label><input class="input" id="pnN" maxlength="40" autocomplete="nickname" placeholder="e.g. DJ Rolex"></div>
+    <span class="err" id="pnE" role="alert"></span><button class="btn btn-primary">Save party name</button></form>`);
+  m.querySelector("#pnN").focus();
+  m.querySelector("#pnF").onsubmit = e => { e.preventDefault(); const n = m.querySelector("#pnN").value.trim();
+    if (n.length < 2) { m.querySelector("#pnE").textContent = "Enter a party name."; return; }
+    const me = E.me(); me.name = n; me.publicAttendance = true; delete S.prefs[uid].needsPartyName;
+    E.persist(); E.closeModal(); if (R()) R().header(); E.toast("Welcome to Evently, " + n + "!"); };
+}
+
 /* ---------- Start ---------- */
 C.init = async function(){
   if (!window.supabase || !window.supabase.createClient) return;
   try {
     sb = window.supabase.createClient(URL_, KEY, {auth:{flowType:"pkce", persistSession:true, autoRefreshToken:true, detectSessionInUrl:true, storageKey:"evently.auth"}});
-    await withTimeout(pullEvents(), 6000);
+    await Promise.all([withTimeout(pullEvents(), 6000), checkProviders()]);
     const {data} = await withTimeout(sb.auth.getSession(), 8000);
     const local = S.session;
     C.on = true;
@@ -312,6 +337,7 @@ C.init = async function(){
     else if (local) { clearUser(local); }   // accounts made before the switch lived only in this browser
     loadTime = Date.now(); E.invalidate(); takeSnap(); if (uid) snap.follows = serverFollows.slice(); C.ready = true; E.persist();
     if (/[?&]code=/.test(location.search)) history.replaceState(null, "", location.pathname + location.hash);
+    if (uid) setTimeout(partyNameModal, 600);
     sb.auth.onAuthStateChange((ev, session) => {
       if (ev === "PASSWORD_RECOVERY") setTimeout(newPasswordModal, 300);
       if (ev === "SIGNED_IN" && session && session.user.id !== uid) afterSignIn(session.user).then(() => R() && R().render());
