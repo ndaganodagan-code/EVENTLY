@@ -236,6 +236,7 @@ C.countsFor = function(slug, local){
   return {saves:Math.max(0, +s.saves + savedNow - savedThen), interested:Math.max(0, +s.interested + d("interested")), going:Math.max(0, +s.going + d("going")),
     views:+s.views + newViews, shares:+s.shares + newShares, recent:local.recent};
 };
+C.attendees = async slug => { if (!C.on || !sb) return null; const {data, error} = await sb.rpc("public_attendees", {event:slug}); return error ? null : data; };
 C.bump = (slug, field) => { if (C.on && sb) sb.rpc("bump_stat", {slug, field}).then(() => {}, () => {}); };
 
 /* ---------- Sign in, sign up, reset ---------- */

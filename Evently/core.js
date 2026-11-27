@@ -265,6 +265,9 @@ document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeModal(); });
 async function copyText(t){ try{ await navigator.clipboard.writeText(t); toast("Link copied"); }catch(e){ const m=modal(`<div class="modal-head"><h3>Copy this link</h3><button class="icon-btn" data-close aria-label="Close">${I.x}</button></div><input class="input" id="copyField" readonly value="${esc(t)}"><p class="small muted">Your browser blocked automatic copying. The link is selected, so press Ctrl+C or long-press to copy.</p>`); const f=m.querySelector("#copyField"); f.focus(); f.select(); } }
 const eventURL = slug => `${SITE}/events/${slug}`;
 
+// "12 likes · 8 going": shown on cards once anyone has liked or is going.
+function socialText(ev){ const c=counts(ev); const bits=[]; if(c.saves) bits.push(`${c.saves} like${c.saves===1?"":"s"}`); if(c.going) bits.push(`${c.going} going`); return bits.join(" · "); }
+function socialLine(ev){ const t=socialText(ev); return t?`<div class="meta social">${I.heartF}<span>${t}</span></div>`:""; }
 function card(ev, opts={}){
   const st=status(ev); const cd=miniCountdown(ev); const saved=isSaved(ev.slug);
   let flag="";
@@ -283,6 +286,7 @@ function card(ev, opts={}){
       <div class="meta">${I.cal}<span>${esc(fDate(ev.startD))} · ${esc(fTime(ev.startD))}</span></div>
       <div class="meta">${I.pin}<span>${esc(ev.venue)}${ev.city && ev.city!=="Kampala" ? ", "+esc(ev.city):""}</span></div>
       ${tix?`<div class="meta tix-note">${I.ext}<span>Tickets sold online</span></div>`:""}
+      ${socialLine(ev)}
     </div>
     <div class="card-foot"><span class="price">${esc(priceText(ev))}</span><span class="cd-mini ${cd.live?"live":""}" data-cd="${ev.slug}">${esc(cd.text)}</span></div>
   </article>`;
@@ -297,12 +301,12 @@ function tile(ev, opts={}){
   const badge = st==="cancelled"?`<span class="flag bad">Cancelled</span>`:st==="postponed"?`<span class="flag bad">Postponed</span>`:ev.verify==="demo"?`<span class="flag demo">Demo</span>`:"";
   return `<a class="tile${opts.rank?" ranked":""}" href="#event-${ev.slug}" data-src="${opts.src||"tile"}">${opts.rank?`<span class="rank-n" aria-hidden="true">${opts.rank}</span>`:""}
     <span class="tile-poster poster">${posterHTML(ev,{text:false})}${badge?`<span class="flags">${badge}</span>`:""}</span>
-    <span class="tile-body"><b>${esc(ev.title)}</b><span>${esc(cd.text&&cd.text!=="Ended"?cd.text:fDate(ev.startD))} · ${esc(fTime(ev.startD))}</span><span>${esc(ev.venue)}</span></span></a>`;
+    <span class="tile-body"><b>${esc(ev.title)}</b><span>${esc(cd.text&&cd.text!=="Ended"?cd.text:fDate(ev.startD))} · ${esc(fTime(ev.startD))}</span><span>${esc(ev.venue)}</span>${socialText(ev)?`<span class="tile-social">♥ ${socialText(ev)}</span>`:""}</span></a>`;
 }
 function row(ev, extra=""){
   return `<div class="row fade-in"><a href="#event-${ev.slug}" class="poster" style="display:block">${posterHTML(ev,{text:false})}</a>
     <div><span class="cat-tag">${esc(catName(ev.cat))}</span><h3><a class="link" style="color:inherit" href="#event-${ev.slug}">${esc(ev.title)}</a></h3>
-    <div class="meta">${I.cal}<span>${esc(fDate(ev.startD))} · ${esc(fTime(ev.startD))}</span></div><div class="meta">${I.pin}<span>${esc(ev.venue)}</span></div>
+    <div class="meta">${I.cal}<span>${esc(fDate(ev.startD))} · ${esc(fTime(ev.startD))}</span></div><div class="meta">${I.pin}<span>${esc(ev.venue)}</span></div>${socialLine(ev)}
     <div class="small"><b>${esc(priceText(ev))}</b> · <span class="cd-mini" data-cd="${ev.slug}">${esc(miniCountdown(ev).text)}</span></div></div>
     <div class="row-actions">${extra || `<button class="btn btn-ghost btn-sm" data-save="${ev.slug}" aria-pressed="${isSaved(ev.slug)}">${isSaved(ev.slug)?"Saved":"Save"}</button>`}</div></div>`;
 }
@@ -327,6 +331,6 @@ async function saveFile(filename, blob){
 
 window.EV = {$,$$,esc,safeUrl,SITE,HOUR,DAY,S,persist,putBlob,delBlob,mediaURL,resizeImage,loadAllBlobs,parseLocal,kParts,kDate,kDayStart,fmt,fDate,fDateLong,fTime,ymd,toLocalInput,weekendRange,
   CATS,catName,venueInfo,hash,events,allEvents,invalidate,bySlug,status,isActive,me,viewerId,sha,counts,realCounts,score,trending,trackView,trackShare,isSaved,attendState,
-  notify,prefs,usersFollowing,reminderSweep,follows,isFollowing,toggleFollow,followSweep,tile,fold,foldCount,updateBell,audit,ugx,priceText,statusLabel,countdownParts,miniCountdown,timeLabel,verifyBadge,I,posterArt,posterSVG,posterHTML,posterSrc,hostOf,isArchived,cloud,
+  notify,prefs,usersFollowing,reminderSweep,follows,isFollowing,toggleFollow,followSweep,tile,fold,foldCount,updateBell,audit,ugx,priceText,statusLabel,countdownParts,miniCountdown,timeLabel,verifyBadge,I,posterArt,posterSVG,posterHTML,posterSrc,hostOf,isArchived,cloud,socialLine,
   toast,modal,closeModal,copyText,eventURL,card,row,empty,skeletonGrid,setHead,saveFile,PALETTES,wrapWords,DEFAULT_SETTINGS};
 })();
