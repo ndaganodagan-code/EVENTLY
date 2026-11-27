@@ -22,7 +22,8 @@ S.settings.weights = Object.assign({}, DEFAULT_SETTINGS.weights, S.settings.weig
 if (!S.settings.v2){ S.settings.baseline=false; S.settings.v2=true; }
 S.follows = S.follows || {}; S.seenAt = S.seenAt || {};
 let saveTimer = null;
-function persist(){ clearTimeout(saveTimer); saveTimer = setTimeout(()=>{ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){ toast("Your browser storage is full. Remove some uploads and try again."); } }, 60); }
+function persist(){ clearTimeout(saveTimer); saveTimer = setTimeout(()=>{ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){ toast("Your browser storage is full. Remove some uploads and try again."); } if(cloud()) window.EVCLOUD.sync(); }, 60); }
+const cloud = () => !!(window.EVCLOUD && window.EVCLOUD.on && window.EVCLOUD.ready);
 
 /* IndexedDB for uploaded media (posters, photos, videos) */
 const blobURLs = {};
@@ -91,7 +92,7 @@ function materialize(seed, now){
 }
 function fromSubmission(s){
   return {slug:s.slug,title:s.title,cat:s.cat,tags:s.tags||[],artists:s.artists||[],start:s.start,end:s.end,venue:s.venue,city:s.city,area:s.area,price:s.price,organizer:s.organizer,contact:s.contact,
-    desc:s.desc,booking:s.booking,tickets:s.tickets&&s.tickets.url?{url:s.tickets.url,site:s.tickets.site||hostOf(s.tickets.url)}:null,website:s.website,sources:[],verify:"organizer",posterId:s.posterId,promo:s.promo||[],videoIds:s.videoIds||[],videoUrl:s.videoUrl,owner:s.owner,status:s.evStatus||null,statusNote:s.statusNote,community:s.community,base:0,created:s.created,lat:s.lat,lng:s.lng};
+    desc:s.desc,booking:s.booking,tickets:s.tickets&&s.tickets.url?{url:s.tickets.url,site:s.tickets.site||hostOf(s.tickets.url)}:null,website:s.website,sources:[],verify:"organizer",posterId:s.posterId,posterUrl:s.posterUrl,promo:s.promo||[],videoIds:s.videoIds||[],videoUrl:s.videoUrl,owner:s.owner,status:s.evStatus||null,statusNote:s.statusNote,community:s.community,base:0,created:s.created,lat:s.lat,lng:s.lng};
 }
 const ARCHIVE_AFTER = 24*3600*1000;
 function isArchived(e, t=Date.now()){ return e.status!=="postponed" && (e.endD||e.startD).getTime()+ARCHIVE_AFTER < t; }
@@ -123,7 +124,8 @@ async function sha(s){ try{ const b=await crypto.subtle.digest("SHA-256",new Tex
 
 /* ---------- Engagement ---------- */
 function base(ev,k){ if(!S.settings.baseline || !ev.base) return 0; const r = (hash(ev.slug+k)%1000)/1000; const f={views:9,shares:.35,saves:.5,interested:.6,going:.22,recent:.08}[k]; return Math.round(ev.base*f*(.8+r*.4)); }
-function realCounts(slug){
+function realCounts(slug){ const l=localCounts(slug); return cloud() ? window.EVCLOUD.countsFor(slug,l) : l; }
+function localCounts(slug){
   const users = S.users.map(u=>u.id); let saves=0, interested=0, going=0;
   users.forEach(id=>{ if((S.saved[id]||[]).includes(slug)) saves++; const a=(S.attend[id]||{})[slug]; if(a==="interested") interested++; if(a==="going") going++; });
   const views=(S.views[slug]||[]).length, shares=(S.shares[slug]||[]).length;
@@ -134,20 +136,20 @@ function realCounts(slug){
 function counts(ev){ const r=realCounts(ev.slug); return {views:r.views+base(ev,"views"),shares:r.shares+base(ev,"shares"),saves:r.saves+base(ev,"saves"),interested:r.interested+base(ev,"interested"),going:r.going+base(ev,"going"),recent:r.recent+base(ev,"recent")}; }
 function score(ev){ const c=counts(ev), w=S.settings.weights; return c.views*w.views+c.shares*w.shares+c.saves*w.saves+c.interested*w.interested+c.going*w.going+c.recent*S.settings.recentBoost; }
 function trending(list){ const act=list.filter(isActive); const sc=act.map(e=>({e,s:score(e)})).sort((a,b)=>(b.s-a.s)||((b.e.base||0)-(a.e.base||0))); const max=sc[0]?sc[0].s:1; return sc.map(x=>Object.assign(x,{pct:Math.max(4,Math.round(100*x.s/max))})); }
-function trackView(slug, src){ (S.views[slug]=S.views[slug]||[]).push({t:Date.now(),v:viewerId(),src:src||"direct"}); const ev=bySlug(slug); if(ev){ const vc=S.viewedCats[viewerId()]=S.viewedCats[viewerId()]||{}; vc[ev.cat]=(vc[ev.cat]||0)+1; } persist(); }
-function trackShare(slug, ch){ (S.shares[slug]=S.shares[slug]||[]).push({t:Date.now(),v:viewerId(),ch}); persist(); }
+function trackView(slug, src){ (S.views[slug]=S.views[slug]||[]).push({t:Date.now(),v:viewerId(),src:src||"direct"}); if(cloud()) window.EVCLOUD.bump(slug,"views"); const ev=bySlug(slug); if(ev){ const vc=S.viewedCats[viewerId()]=S.viewedCats[viewerId()]||{}; vc[ev.cat]=(vc[ev.cat]||0)+1; } persist(); }
+function trackShare(slug, ch){ (S.shares[slug]=S.shares[slug]||[]).push({t:Date.now(),v:viewerId(),ch}); if(cloud()) window.EVCLOUD.bump(slug,"shares"); persist(); }
 const isSaved = slug => !!(S.session && (S.saved[S.session]||[]).includes(slug));
 const attendState = slug => S.session ? (S.attend[S.session]||{})[slug] : null;
 
 /* ---------- Notifications ---------- */
-function notify(uid, text, link, kind){ const p=prefs(uid); if(kind && p[kind]===false) return; (S.notifs[uid]=S.notifs[uid]||[]).unshift({id:"n"+Date.now()+Math.random().toString(36).slice(2,5),t:Date.now(),text,link,read:false,kind}); S.notifs[uid]=S.notifs[uid].slice(0,80); persist(); if(uid===S.session){ updateBell(); if(p.push && "Notification" in window && Notification.permission==="granted"){ try{ new Notification("Evently",{body:text}); }catch(e){} } } }
+function notify(uid, text, link, kind){ if(cloud() && uid!==S.session) return; const p=prefs(uid); if(kind && p[kind]===false) return; (S.notifs[uid]=S.notifs[uid]||[]).unshift({id:"n"+Date.now()+Math.random().toString(36).slice(2,5),t:Date.now(),text,link,read:false,kind}); S.notifs[uid]=S.notifs[uid].slice(0,80); persist(); if(uid===S.session){ updateBell(); if(p.push && "Notification" in window && Notification.permission==="granted"){ try{ new Notification("Evently",{body:text}); }catch(e){} } } }
 function prefs(uid){ return Object.assign({saved:true,going:true,interested:true,changes:true,cancellations:true,newMatches:true,email:true,push:false}, S.prefs[uid]||{}); }
 function usersFollowing(slug){ return S.users.filter(u=>(S.saved[u.id]||[]).includes(slug) || (S.attend[u.id]||{})[slug]); }
 function followKey(){ return S.session || "guest"; }
 function follows(){ return S.follows[followKey()] || []; }
 function isFollowing(venue){ return follows().includes(venue); }
 function toggleFollow(venue){ const k=followKey(); const l=S.follows[k]||[]; if(l.includes(venue)) S.follows[k]=l.filter(v=>v!==venue); else { S.follows[k]=[...l,venue]; (S.seenAt[k]=S.seenAt[k]||{}); events().filter(e=>e.venue===venue).forEach(e=>S.seenAt[k][e.slug]=1); } persist(); return S.follows[k].includes(venue); }
-function followSweep(){ const k=followKey(); const l=follows(); if(!l.length) return; const seen=S.seenAt[k]=S.seenAt[k]||{}; let fresh=[];
+function followSweep(){ if(cloud() && S.session) return; const k=followKey(); const l=follows(); if(!l.length) return; const seen=S.seenAt[k]=S.seenAt[k]||{}; let fresh=[];
   events().filter(e=>l.includes(e.venue) && isActive(e) && !seen[e.slug]).forEach(e=>{ seen[e.slug]=1; fresh.push(e); });
   if(!fresh.length) return; persist();
   fresh.forEach(e=>{ const text=`New at ${e.venue}: ${e.title}, ${fDate(e.startD)}.`;
@@ -246,7 +248,7 @@ function posterSVG(ev, opts={}){
   return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(ev.title)} poster"><defs><linearGradient id="fade${hash(ev.slug)%999}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity="0"/><stop offset=".45" stop-color="#000" stop-opacity=".55"/><stop offset="1" stop-color="#000" stop-opacity=".85"/></linearGradient></defs>${svg}${text}</svg>`;
 }
 function wrapWords(s, n){ const w=s.split(/\s+/); const out=[]; let cur=""; w.forEach(x=>{ if((cur+" "+x).trim().length>n && cur){ out.push(cur); cur=x; } else cur=(cur+" "+x).trim(); }); if(cur) out.push(cur); return out.slice(0,4); }
-function posterSrc(ev){ if(ev.posterId && mediaURL(ev.posterId)) return mediaURL(ev.posterId); if(window.EVENTLY_POSTERS && EVENTLY_POSTERS.has(ev.slug)) return `posters/${ev.slug}.webp`; return null; }
+function posterSrc(ev){ if(ev.posterUrl) return ev.posterUrl; if(ev.posterId && mediaURL(ev.posterId)) return mediaURL(ev.posterId); if(window.EVENTLY_POSTERS && EVENTLY_POSTERS.has(ev.slug)) return `posters/${ev.slug}.webp`; return null; }
 function posterHTML(ev, opts={}){ const src=posterSrc(ev); if(!src) return posterSVG(ev, opts);
   if(opts.full) return `<img class="pbg" src="${src}" alt="" aria-hidden="true"><img class="pfull" src="${src}" alt="${esc(ev.title)} poster">`;
   return `<img src="${src}" alt="${esc(ev.title)} poster" loading="lazy" class="preal">`; }
@@ -325,6 +327,6 @@ async function saveFile(filename, blob){
 
 window.EV = {$,$$,esc,safeUrl,SITE,HOUR,DAY,S,persist,putBlob,delBlob,mediaURL,resizeImage,loadAllBlobs,parseLocal,kParts,kDate,kDayStart,fmt,fDate,fDateLong,fTime,ymd,toLocalInput,weekendRange,
   CATS,catName,venueInfo,hash,events,allEvents,invalidate,bySlug,status,isActive,me,viewerId,sha,counts,realCounts,score,trending,trackView,trackShare,isSaved,attendState,
-  notify,prefs,usersFollowing,reminderSweep,follows,isFollowing,toggleFollow,followSweep,tile,fold,foldCount,updateBell,audit,ugx,priceText,statusLabel,countdownParts,miniCountdown,timeLabel,verifyBadge,I,posterArt,posterSVG,posterHTML,posterSrc,hostOf,isArchived,
+  notify,prefs,usersFollowing,reminderSweep,follows,isFollowing,toggleFollow,followSweep,tile,fold,foldCount,updateBell,audit,ugx,priceText,statusLabel,countdownParts,miniCountdown,timeLabel,verifyBadge,I,posterArt,posterSVG,posterHTML,posterSrc,hostOf,isArchived,cloud,
   toast,modal,closeModal,copyText,eventURL,card,row,empty,skeletonGrid,setHead,saveFile,PALETTES,wrapWords,DEFAULT_SETTINGS};
 })();

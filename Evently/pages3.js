@@ -349,6 +349,7 @@ async function boot(){
   $("#bellBtn").onclick=R.notifPanel;
   $("#menuBtn").onclick=()=>{ const d=document.createElement("div"); d.className="drawer"; const u=E.me(); d.innerHTML=`<div class="drawer-panel"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span class="logo"><img class="logo-icon" src="logo-icon.png" alt="" width="34" height="34"><img class="logo-word wm-dark" src="logo-word-dark.png" alt="evently" height="26"><img class="logo-word wm-light" src="logo-word-white.png" alt="evently" height="26"></span><button class="icon-btn" aria-label="Close menu">${I.x}</button></div>${[["#home","Home"],["#discover","Discover"],["#weekend","This Weekend"],["#radar","Trending"],["#categories","Categories"],["#near","Near me"],["#deals","Deals"],["#organizers","For Organizers"],["#my-events","My Events"],...(u?[["#account","Account"]]:[]),...(u&&u.role==="admin"?[["#admin","Admin"]]:[])].map(([h,l])=>`<a href="${h}">${l}</a>`).join("")}</div>`; d.addEventListener("click",e=>{ if(e.target===d||e.target.closest(".icon-btn")) d.remove(); }); document.body.appendChild(d); };
   await E.loadAllBlobs();
+  if(window.EVCLOUD) await window.EVCLOUD.init();
   R.header(); R._internal=false; R.render();
   setInterval(tick,1000);
   E.reminderSweep(); E.followSweep(); setInterval(()=>{ E.reminderSweep(); E.followSweep(); E.invalidate(); },30000);
