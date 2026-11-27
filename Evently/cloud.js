@@ -264,7 +264,7 @@ C.authSubmit = async function(mode, m, email){
     E.closeModal(); E.toast("Welcome back, " + (E.me()||{}).name); R().afterAuth(); return;
   }
   if ($("#aHp") && $("#aHp").value) return;
-  const name = $("#aName").value.trim(); if (name.length < 2) { err.textContent = "Enter a display name."; return; }
+  const name = $("#aName").value.trim(); if (name.length < 2) { err.textContent = "Enter a party name."; return; }
   if (!pwOK(pw)) { err.textContent = "Use at least 8 characters with a letter and a number."; return; }
   const interests = Array.from(m.querySelectorAll("[data-int][aria-pressed=true]")).map(b => b.dataset.int);
   busy(true);

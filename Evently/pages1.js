@@ -321,7 +321,7 @@ R.event = function(app, slug, src){
           <button class="btn btn-ghost" id="shareBtn">${I.share} Share</button>
           <a class="btn btn-ghost" href="#poster-${slug}">${I.img} Make a poster</a>
         </div>
-        ${att?`<label class="check small"><input type="checkbox" id="pubAtt" ${u&&u.publicAttendance?"checked":""}> Show my attendance publicly on event pages</label>`:""}
+        ${att?`<label class="check small"><input type="checkbox" id="pubAtt" ${u&&u.publicAttendance?"checked":""}> Show my party name on events I'm going to</label>`:""}
         ${ev.tickets&&E.safeUrl(ev.tickets.url)&&E.isActive(ev)?`<a class="btn btn-primary" target="_blank" rel="noopener" href="${E.safeUrl(ev.tickets.url)}" data-tix="${esc(slug)}">${I.ext} Buy tickets on ${esc(ev.tickets.site||E.hostOf(ev.tickets.url))}</a>${ev.tickets.note?`<p class="tiny muted" style="margin-top:-8px">${esc(ev.tickets.note)}</p>`:""}`:""}${ev.ticketsNote&&E.isActive(ev)?`<p class="small" style="margin:0"><b>Tickets:</b> ${esc(ev.ticketsNote)}</p>`:""}${E.safeUrl(ev.booking)?`<a class="btn btn-dark" target="_blank" rel="noopener" href="${E.safeUrl(ev.booking)}">${I.ext} Official event and booking page</a><p class="tiny muted" style="margin-top:-8px">Links open the organizer's or ticket seller's own site. Evently does not sell tickets or take payments.</p>`:""}
       </div>
     </div>
@@ -331,7 +331,7 @@ R.event = function(app, slug, src){
         <section style="display:grid;gap:12px"><div class="sec-head" style="margin:0"><h2>Gallery</h2>${st==="completed"&&(ev.community||ev.owner)?`<a class="link" href="#gallery-${slug}">Open Aftermovie</a>`:""}</div>
           ${gallery.length?`<div class="gallery">${gallery.map((g,i)=>`<button data-view-media="${i}" aria-label="Open media ${i+1}">${g.type==="video"?`<video src="${g.url}" muted playsinline></video>`:`<img src="${g.url}" alt="" loading="lazy">`}</button>`).join("")}</div>`
           : `<div class="empty" style="padding:28px"><p>No photos yet. ${st==="completed"&&ev.community?"Were you there? Add your photos in the Aftermovie gallery.":"Organizers can add promotional photos and videos from their dashboard."}</p></div>`}</section>
-        ${E.cloud()?`<div id="whoGoing"></div>`:pub.length?`<section style="display:grid;gap:12px"><h2>Who's going</h2><div class="chips">${pub.map(p=>`<span class="chip">${p.avatar&&E.mediaURL(p.avatar)?`<img src="${E.mediaURL(p.avatar)}" alt="" style="width:22px;height:22px;border-radius:50%;object-fit:cover">`:I.user}${esc(p.name)}</span>`).join("")}</div><p class="tiny muted">Only people who chose to show their attendance publicly appear here.</p></section>`:""}
+        ${E.cloud()?`<div id="whoGoing"></div>`:pub.length?`<section style="display:grid;gap:12px"><h2>Who's going</h2><div class="chips">${pub.map(p=>`<span class="chip">${p.avatar&&E.mediaURL(p.avatar)?`<img src="${E.mediaURL(p.avatar)}" alt="" style="width:22px;height:22px;border-radius:50%;object-fit:cover">`:I.user}${esc(p.name)}</span>`).join("")}</div><p class="tiny muted">People appear by their party name. Anyone can hide theirs in their account.</p></section>`:""}
       </div>
       <aside style="display:grid;gap:16px">
         <div class="panel"><h3>Organizer</h3><div style="display:flex;gap:12px;align-items:center"><span class="ic" style="width:44px;height:44px;border-radius:50%;background:var(--accent);color:#111;display:grid;place-items:center;font:800 1.1rem var(--f-display)">${esc((ev.organizer||"?").replace(/^not stated.*/i,"?")[0])}</span><div><b>${esc(ev.organizer||"Not stated")}</b><div class="small muted">${ev.owner?"Verified Evently organizer account":"Taken from the public listing"}</div></div></div>
@@ -348,13 +348,13 @@ R.event = function(app, slug, src){
   </div>`;
   if(E.cloud()) window.EVCLOUD.attendees(slug).then(list=>{ const box=$("#whoGoing"); if(!box||!list) return; const total=c.going+c.interested, others=Math.max(0,total-list.length); if(!total) return;
     const chip=p=>`<span class="chip">${I.user}${esc(p.name)}${p.kind==="interested"?`<span class="tiny muted"> · interested</span>`:""}</span>`;
-    box.innerHTML=`<section style="display:grid;gap:12px"><h2>Who's going</h2>${list.length?`<div class="chips">${list.map(chip).join("")}</div>`:""}<p class="small muted">${list.length?(others?`And ${others} more ${others===1?"person":"people"}. `:""):`${total} ${total===1?"person is":"people are"} going or interested. `}Only people who chose to show their attendance publicly are named. You can choose this in your account.</p></section>`; });
+    box.innerHTML=`<section style="display:grid;gap:12px"><h2>Who's going</h2>${list.length?`<div class="chips">${list.map(chip).join("")}</div>`:""}<p class="small muted">${list.length?(others?`And ${others} more ${others===1?"person":"people"}. `:""):`${total} ${total===1?"person is":"people are"} going or interested. `}People appear by their party name, never their real name. Anyone can hide theirs in their account.</p></section>`; });
   app.onclick=e=>{
     const fb=e.target.closest("[data-follow]"); if(fb){ const on=E.toggleFollow(fb.dataset.follow); fb.setAttribute("aria-pressed",on); fb.innerHTML=on?I.check+" Following this place":I.bell+" Follow this place"; E.toast(on?`You'll be notified when ${fb.dataset.follow} lists new events`:"Unfollowed"); if(on && !S.session && "Notification" in window && Notification.permission==="default"){ try{ Notification.requestPermission(); }catch(_){} } return; }
     const a=e.target.closest("[data-attend]"); if(a){ if(!requireLogin("mark your attendance")) return; const k=a.dataset.attend; const m=S.attend[S.session]=S.attend[S.session]||{}; if(m[slug]===k){ delete m[slug]; E.toast(k==="going"?"Attendance cancelled":"Removed from interested"); } else { m[slug]=k; E.toast(k==="going"?"You're attending. We'll remind you before it starts.":"Marked as interested"); } E.persist(); R.event(app,slug,"internal"); return; }
     const mv=e.target.closest("[data-view-media]"); if(mv){ viewer(gallery,+mv.dataset.viewMedia); }
   };
-  const pa=$("#pubAtt"); if(pa) pa.onchange=()=>{ const uu=E.me(); if(uu){ uu.publicAttendance=pa.checked; E.persist(); E.toast(pa.checked?"Your attendance is public":"Your attendance is private"); R.event(app,slug,"internal"); } };
+  const pa=$("#pubAtt"); if(pa) pa.onchange=()=>{ const uu=E.me(); if(uu){ uu.publicAttendance=pa.checked; E.persist(); E.toast(pa.checked?"Your party name shows on events":"Your party name is hidden"); R.event(app,slug,"internal"); } };
   $("#shareBtn").onclick=()=>shareModal(ev);
   $("#waBtn").addEventListener("click",()=>E.trackShare(slug,"whatsapp"));
   $("#reportBtn").onclick=()=>reportModal(ev);
