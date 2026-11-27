@@ -313,7 +313,7 @@ R.event = function(app, slug, src){
           <div class="fact"><span class="ic">${I.star}</span><div><b>${esc(E.priceText(ev))}</b><div class="small muted">${esc(ev.price&&ev.price.note||"Price information from the organizer. Evently does not sell tickets.")}</div></div></div>
         </div>
         ${st==="upcoming"?`<p class="starts-in" data-bigcd="${slug}"></p>`:""}
-        ${c.interested+c.going>0?`<p class="small muted counts-line">${c.going?`<b>${c.going}</b> going`:""}${c.going&&c.interested?" · ":""}${c.interested?`<b>${c.interested}</b> interested`:""}</p>`:""}
+        ${c.saves+c.interested+c.going>0?`<p class="small muted counts-line">${[c.saves?`<b>${c.saves}</b> like${c.saves===1?"":"s"}`:"",c.going?`<b>${c.going}</b> going`:"",c.interested?`<b>${c.interested}</b> interested`:""].filter(Boolean).join(" · ")}</p>`:""}
         <div class="actions">
           ${E.isActive(ev)||st==="postponed" ? `<button class="btn ${att==="interested"?"btn-dark":"btn-ghost"}" data-attend="interested" aria-pressed="${att==="interested"}">${I.star} ${att==="interested"?"Interested":"I'm interested"}</button>
           <button class="btn ${att==="going"?"btn-dark":"btn-primary"}" data-attend="going" aria-pressed="${att==="going"}">${I.check} ${att==="going"?"You're attending":"I'm attending"}</button>`:""}
@@ -321,7 +321,7 @@ R.event = function(app, slug, src){
           <button class="btn btn-ghost" id="shareBtn">${I.share} Share</button>
           <a class="btn btn-ghost" href="#poster-${slug}">${I.img} Make a poster</a>
         </div>
-        ${att?`<label class="check small"><input type="checkbox" id="pubAtt" ${u&&u.publicAttendance?"checked":""}> Show my attendance publicly on event pages</label>`:""}
+        ${att?`<label class="check small"><input type="checkbox" id="pubAtt" ${u&&u.publicAttendance?"checked":""}> Show my party name on events I'm going to</label>`:""}
         ${ev.tickets&&E.safeUrl(ev.tickets.url)&&E.isActive(ev)?`<a class="btn btn-primary" target="_blank" rel="noopener" href="${E.safeUrl(ev.tickets.url)}" data-tix="${esc(slug)}">${I.ext} Buy tickets on ${esc(ev.tickets.site||E.hostOf(ev.tickets.url))}</a>${ev.tickets.note?`<p class="tiny muted" style="margin-top:-8px">${esc(ev.tickets.note)}</p>`:""}`:""}${ev.ticketsNote&&E.isActive(ev)?`<p class="small" style="margin:0"><b>Tickets:</b> ${esc(ev.ticketsNote)}</p>`:""}${E.safeUrl(ev.booking)?`<a class="btn btn-dark" target="_blank" rel="noopener" href="${E.safeUrl(ev.booking)}">${I.ext} Official event and booking page</a><p class="tiny muted" style="margin-top:-8px">Links open the organizer's or ticket seller's own site. Evently does not sell tickets or take payments.</p>`:""}
       </div>
     </div>
@@ -331,7 +331,8 @@ R.event = function(app, slug, src){
         <section style="display:grid;gap:12px"><div class="sec-head" style="margin:0"><h2>Gallery</h2>${st==="completed"&&(ev.community||ev.owner)?`<a class="link" href="#gallery-${slug}">Open Aftermovie</a>`:""}</div>
           ${gallery.length?`<div class="gallery">${gallery.map((g,i)=>`<button data-view-media="${i}" aria-label="Open media ${i+1}">${g.type==="video"?`<video src="${g.url}" muted playsinline></video>`:`<img src="${g.url}" alt="" loading="lazy">`}</button>`).join("")}</div>`
           : `<div class="empty" style="padding:28px"><p>No photos yet. ${st==="completed"&&ev.community?"Were you there? Add your photos in the Aftermovie gallery.":"Organizers can add promotional photos and videos from their dashboard."}</p></div>`}</section>
-        ${pub.length?`<section style="display:grid;gap:12px"><h2>Who's going</h2><div class="chips">${pub.map(p=>`<span class="chip">${p.avatar&&E.mediaURL(p.avatar)?`<img src="${E.mediaURL(p.avatar)}" alt="" style="width:22px;height:22px;border-radius:50%;object-fit:cover">`:I.user}${esc(p.name)}</span>`).join("")}</div><p class="tiny muted">Only people who chose to show their attendance publicly appear here.</p></section>`:""}
+        ${canRate(ev,st)?`<div id="reviewsBox"></div>`:""}
+        ${E.cloud()?`<div id="whoGoing"></div>`:pub.length?`<section style="display:grid;gap:12px"><h2>Who's going</h2><div class="chips">${pub.map(p=>`<span class="chip">${p.avatar&&E.mediaURL(p.avatar)?`<img src="${E.mediaURL(p.avatar)}" alt="" style="width:22px;height:22px;border-radius:50%;object-fit:cover">`:I.user}${esc(p.name)}</span>`).join("")}</div><p class="tiny muted">People appear by their party name. Anyone can hide theirs in their account.</p></section>`:""}
       </div>
       <aside style="display:grid;gap:16px">
         <div class="panel"><h3>Organizer</h3><div style="display:flex;gap:12px;align-items:center"><span class="ic" style="width:44px;height:44px;border-radius:50%;background:var(--accent);color:#111;display:grid;place-items:center;font:800 1.1rem var(--f-display)">${esc((ev.organizer||"?").replace(/^not stated.*/i,"?")[0])}</span><div><b>${esc(ev.organizer||"Not stated")}</b><div class="small muted">${ev.owner?"Verified Evently organizer account":"Taken from the public listing"}</div></div></div>
@@ -346,12 +347,16 @@ R.event = function(app, slug, src){
     </div>
     ${related.length?`<section class="section"><div class="sec-head"><div><span class="eyebrow">You might also like</span><h2>Related events</h2></div></div><div class="grid">${related.map(e=>E.card(e,{src:"related"})).join("")}</div></section>`:""}
   </div>`;
+  if(E.cloud()) window.EVCLOUD.attendees(slug).then(list=>{ const box=$("#whoGoing"); if(!box||!list) return; const total=c.going+c.interested, others=Math.max(0,total-list.length); if(!total) return;
+    const chip=p=>`<span class="chip">${I.user}${esc(p.name)}${p.kind==="interested"?`<span class="tiny muted"> · interested</span>`:""}</span>`;
+    box.innerHTML=`<section style="display:grid;gap:12px"><h2>Who's going</h2>${list.length?`<div class="chips">${list.map(chip).join("")}</div>`:""}<p class="small muted">${list.length?(others?`And ${others} more ${others===1?"person":"people"}. `:""):`${total} ${total===1?"person is":"people are"} going or interested. `}People appear by their party name, never their real name. Anyone can hide theirs in their account.</p></section>`; });
   app.onclick=e=>{
     const fb=e.target.closest("[data-follow]"); if(fb){ const on=E.toggleFollow(fb.dataset.follow); fb.setAttribute("aria-pressed",on); fb.innerHTML=on?I.check+" Following this place":I.bell+" Follow this place"; E.toast(on?`You'll be notified when ${fb.dataset.follow} lists new events`:"Unfollowed"); if(on && !S.session && "Notification" in window && Notification.permission==="default"){ try{ Notification.requestPermission(); }catch(_){} } return; }
     const a=e.target.closest("[data-attend]"); if(a){ if(!requireLogin("mark your attendance")) return; const k=a.dataset.attend; const m=S.attend[S.session]=S.attend[S.session]||{}; if(m[slug]===k){ delete m[slug]; E.toast(k==="going"?"Attendance cancelled":"Removed from interested"); } else { m[slug]=k; E.toast(k==="going"?"You're attending. We'll remind you before it starts.":"Marked as interested"); } E.persist(); R.event(app,slug,"internal"); return; }
     const mv=e.target.closest("[data-view-media]"); if(mv){ viewer(gallery,+mv.dataset.viewMedia); }
   };
-  const pa=$("#pubAtt"); if(pa) pa.onchange=()=>{ const uu=E.me(); if(uu){ uu.publicAttendance=pa.checked; E.persist(); E.toast(pa.checked?"Your attendance is public":"Your attendance is private"); R.event(app,slug,"internal"); } };
+  const pa=$("#pubAtt"); if(pa) pa.onchange=()=>{ const uu=E.me(); if(uu){ uu.publicAttendance=pa.checked; E.persist(); E.toast(pa.checked?"Your party name shows on events":"Your party name is hidden"); R.event(app,slug,"internal"); } };
+  const rb=$("#reviewsBox"); if(rb) loadReviews(rb, ev);
   $("#shareBtn").onclick=()=>shareModal(ev);
   $("#waBtn").addEventListener("click",()=>E.trackShare(slug,"whatsapp"));
   $("#reportBtn").onclick=()=>reportModal(ev);
@@ -385,6 +390,48 @@ function viewer(items, i){
   document.body.appendChild(v); try{ v.requestFullscreen && v.requestFullscreen().catch(()=>{}); }catch(e){}
 }
 R.viewer=viewer;
+/* ---------- Ratings and reviews (members rate an event once it has started) ---------- */
+function canRate(ev, st){ return st!=="cancelled" && ev.startD.getTime()<=Date.now() && ev.verify!=="demo"; }
+const STAR_F='<svg viewBox="0 0 24 24" fill="currentColor"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"/></svg>';
+const starsHTML=(n,label)=>`<span class="stars" role="img" aria-label="${label||`${n} out of 5 stars`}">${[1,2,3,4,5].map(i=>`<span class="${i<=Math.round(n)?"":"off"}">${STAR_F}</span>`).join("")}</span>`;
+const RV={
+  async list(slug){ if(E.cloud()) return await window.EVCLOUD.reviews(slug);
+    return (S.reviews||[]).filter(r=>r.slug===slug).map(r=>{ const u=S.users.find(x=>x.id===r.by); return u&&!u.suspended?{id:r.id,name:u.name,stars:r.stars,body:r.body,t:r.t,went:(S.attend[r.by]||{})[slug]==="going",mine:r.by===S.session}:null; })
+      .filter(Boolean).sort((a,b)=>(b.mine-a.mine)||(b.t-a.t)); },
+  async save(slug,stars,body){ if(E.cloud()) return window.EVCLOUD.saveReview(slug,stars,body);
+    const ex=(S.reviews=S.reviews||[]).find(r=>r.slug===slug&&r.by===S.session);
+    if(ex) Object.assign(ex,{stars,body,t:Date.now()}); else S.reviews.unshift({id:"rv"+Date.now().toString(36),slug,by:S.session,stars,body,t:Date.now()});
+    E.persist(); return true; },
+  async remove(id){ if(E.cloud()) return window.EVCLOUD.deleteReview(id); S.reviews=(S.reviews||[]).filter(r=>r.id!==id); E.persist(); return true; }
+};
+async function loadReviews(box, ev){
+  const list=await RV.list(ev.slug); if(!box.isConnected) return;
+  if(!list){ box.innerHTML=`<section class="panel"><h2>Ratings and reviews</h2><p class="small muted">Reviews could not load right now. Refresh the page to try again.</p></section>`; return; }
+  const u=E.me(), mine=list.find(r=>r.mine), n=list.length, avg=n?list.reduce((s,r)=>s+r.stars,0)/n:0, admin=u&&u.role==="admin";
+  let pick=mine?mine.stars:0;
+  box.innerHTML=`<section class="panel" id="reviews"><h2>Ratings and reviews</h2>
+    ${n?`<div class="rv-sum"><b>${avg.toFixed(1)}</b><div>${starsHTML(avg,`Rated ${avg.toFixed(1)} out of 5`)}<div class="small muted">${n} rating${n===1?"":"s"} from Evently members</div></div></div>`:`<p class="small muted">No ratings yet. Were you there? Be the first to rate it.</p>`}
+    ${u?`<form id="rvF" style="display:grid;gap:10px"><span class="small" style="font-weight:600">${mine?"Your rating":"How was it?"}</span>
+        <div class="star-pick" role="group" aria-label="Your rating">${[1,2,3,4,5].map(i=>`<button type="button" data-star="${i}" aria-label="${i} star${i>1?"s":""}" class="${i<=pick?"on":""}">${STAR_F}</button>`).join("")}</div>
+        <textarea class="input" id="rvT" rows="3" maxlength="600" placeholder="What was the music, crowd and organisation like? (optional)" style="height:auto;padding:10px 12px">${esc(mine?mine.body:"")}</textarea>
+        <span class="err" id="rvErr" role="alert"></span>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary btn-sm">${mine?"Update my review":"Post my review"}</button>${mine?`<button type="button" class="btn btn-ghost btn-sm" data-rv-del="${esc(String(mine.id))}">Delete my review</button>`:""}</div>
+        <span class="tiny muted">Your review shows with your party name, ${esc(u.name)}.</span></form>`
+      :`<button class="btn btn-ghost btn-sm" id="rvLogin" style="justify-self:start">${I.star} Sign in to rate this event</button>`}
+    ${n?`<div>${list.map(r=>`<div class="rv"><div class="rv-head">${starsHTML(r.stars)}<b>${esc(r.name)}</b>${r.went?`<span class="pill neutral">Was going</span>`:""}<span class="muted">${esc(E.fDate(new Date(r.t)))}</span>${admin&&!r.mine?`<button class="link small" style="border:0;background:none;margin-left:auto" data-rv-del="${esc(String(r.id))}">Remove</button>`:""}</div>${r.body?`<p>${esc(r.body)}</p>`:""}</div>`).join("")}</div>`:""}
+  </section>`;
+  // Search engines: add the rating to this event's structured data
+  const ld=$("#ld-json"); if(ld){ try{ const d=JSON.parse(ld.textContent); delete d.aggregateRating; delete d.review;
+    if(n){ d.aggregateRating={"@type":"AggregateRating",ratingValue:+avg.toFixed(1),reviewCount:n,ratingCount:n,bestRating:5,worstRating:1};
+      d.review=list.slice(0,5).map(r=>({"@type":"Review",author:{"@type":"Person",name:r.name},datePublished:new Date(r.t).toISOString().slice(0,10),reviewRating:{"@type":"Rating",ratingValue:r.stars,bestRating:5,worstRating:1},...(r.body?{reviewBody:r.body}:{})})); }
+    ld.textContent=JSON.stringify(d).replace(/</g,"\\u003c"); }catch(e){} }
+  const lg=$("#rvLogin",box); if(lg) lg.onclick=()=>requireLogin("rate this event");
+  box.onclick=async e=>{ const s=e.target.closest("[data-star]"); if(s){ pick=+s.dataset.star; $$("[data-star]",box).forEach(b=>b.classList.toggle("on",+b.dataset.star<=pick)); return; }
+    const d=e.target.closest("[data-rv-del]"); if(d){ d.disabled=true; const id=d.dataset.rvDel; if(await RV.remove(/^\d+$/.test(id)?+id:id)){ E.toast("Review removed"); loadReviews(box,ev); } else d.disabled=false; } };
+  const f=$("#rvF",box); if(f) f.onsubmit=async e=>{ e.preventDefault(); if(!pick){ $("#rvErr",box).textContent="Tap the stars to choose a rating."; return; }
+    const btn=f.querySelector(".btn-primary"); btn.disabled=true; const ok=await RV.save(ev.slug,pick,$("#rvT",box).value.trim().slice(0,600)); btn.disabled=false;
+    if(ok){ E.toast(mine?"Review updated":"Thanks for rating this event"); loadReviews(box,ev); } };
+}
 function requireLogin(what){ if(E.me()) return true; R.authModal("login", `Sign in to ${what}.`); return false; }
 R.requireLogin=requireLogin;
 

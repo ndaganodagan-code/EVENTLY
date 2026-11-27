@@ -80,11 +80,13 @@ R.deals = function(app){
 };
 
 /* ---------- Auth ---------- */
+const GOOGLE_G='<svg viewBox="0 0 48 48" width="18" height="18" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
 R.authModal = function(mode="login", reason=""){
   const m=E.modal(`<div class="modal-head"><h3>${mode==="login"?"Sign in to Evently":mode==="register"?"Create your Evently account":"Reset your password"}</h3><button class="icon-btn" data-close aria-label="Close">${I.x}</button></div>
     ${reason?`<p class="notice">${I.info}<span>${esc(reason)}</span></p>`:""}
+    ${mode!=="reset"&&window.EVCLOUD&&EVCLOUD.googleReady&&EVCLOUD.googleReady()?`<button type="button" class="btn btn-ghost" id="gBtn" style="width:100%">${GOOGLE_G} Continue with Google</button><div class="or-line"><span>or use your email</span></div>`:""}
     <form id="authF" style="display:grid;gap:12px" novalidate>
-      ${mode==="register"?`<div class="field"><label for="aName">Display name</label><input class="input" id="aName" autocomplete="nickname" maxlength="40" required></div>`:""}
+      ${mode==="register"?`<div class="field"><label for="aName">Party name</label><input class="input" id="aName" autocomplete="nickname" maxlength="40" placeholder="e.g. DJ Rolex" required><span class="tiny muted">Shown to others on events you go to. Use a nickname, not your real name.</span></div>`:""}
       <div class="field"><label for="aEmail">Email</label><input class="input" id="aEmail" type="email" autocomplete="email" required></div>
       ${mode!=="reset"?`<div class="field"><label for="aPw">Password</label><input class="input" id="aPw" type="password" autocomplete="${mode==="login"?"current-password":"new-password"}" minlength="8" required>${mode==="register"?`<span class="tiny muted">At least 8 characters, with a letter and a number.</span>`:""}</div>`:""}
       ${mode==="register"?`<div class="field"><label for="aCity">City or area</label><select class="input" id="aCity">${window.EVENTLY_CITIES.map(c=>`<option>${esc(c.name)}</option>`).join("")}</select></div>
@@ -97,6 +99,7 @@ R.authModal = function(mode="login", reason=""){
       ${mode==="login"?`<button class="link" style="border:0;background:none" data-mode="register">New here? Create an account</button><button class="link" style="border:0;background:none" data-mode="reset">Forgot password?</button>`:`<button class="link" style="border:0;background:none" data-mode="login">Back to sign in</button>`}</div>
     <p class="tiny muted">${E.cloud()?"Your account is stored securely with Evently.":"Your password is encrypted before it is stored."}</p>`);
   m.addEventListener("click",e=>{ const b=e.target.closest("[data-mode]"); if(b) R.authModal(b.dataset.mode, reason); const i=e.target.closest("[data-int]"); if(i) i.setAttribute("aria-pressed", i.getAttribute("aria-pressed")!=="true"); });
+  const gb=$("#gBtn",m); if(gb) gb.onclick=()=>{ gb.disabled=true; window.EVCLOUD.googleSignIn().finally(()=>{ gb.disabled=false; }); };
   $("#authF",m).onsubmit=async e=>{ e.preventDefault(); const err=$("#aErr",m); err.textContent="";
     const email=$("#aEmail",m).value.trim().toLowerCase(); if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)){ err.textContent="Enter a valid email address."; return; }
     if(E.cloud()) return window.EVCLOUD.authSubmit(mode, m, email);
@@ -109,10 +112,10 @@ R.authModal = function(mode="login", reason=""){
     const pw=$("#aPw",m).value;
     if(mode==="login"){ const u=S.users.find(x=>x.email===email); const h=await E.sha(email+"|"+pw); if(!u||u.pw!==h){ err.textContent="That email and password don't match. Try again or reset your password."; return; } if(u.suspended){ err.textContent="This account is suspended. Contact Evently support."; return; } S.session=u.id; E.persist(); E.closeModal(); E.toast("Welcome back, "+u.name); R.afterAuth(); return; }
     if($("#aHp",m).value) return; // spam trap
-    const name=$("#aName",m).value.trim(); if(name.length<2){ err.textContent="Enter a display name."; return; }
+    const name=$("#aName",m).value.trim(); if(name.length<2){ err.textContent="Enter a party name."; return; }
     if(pw.length<8||!/[a-z]/i.test(pw)||!/\d/.test(pw)){ err.textContent="Use at least 8 characters with a letter and a number."; return; }
     if(S.users.some(x=>x.email===email)){ err.textContent="An account with that email already exists. Sign in instead."; return; }
-    const u={id:"u"+Date.now().toString(36),email,name,pw:await E.sha(email+"|"+pw),city:$("#aCity",m).value,interests:$$("[data-int][aria-pressed=true]",m).map(b=>b.dataset.int),publicAttendance:false,role:S.users.length?"user":"admin",created:Date.now()};
+    const u={id:"u"+Date.now().toString(36),email,name,pw:await E.sha(email+"|"+pw),city:$("#aCity",m).value,interests:$$("[data-int][aria-pressed=true]",m).map(b=>b.dataset.int),publicAttendance:true,role:S.users.length?"user":"admin",created:Date.now()};
     S.users.push(u); S.session=u.id; E.persist(); E.closeModal(); E.toast(u.role==="admin"?"Account created. As the first account here, you're also an administrator.":"Account created. Welcome to Evently!"); R.afterAuth();
   };
 };
@@ -173,10 +176,10 @@ R.account = function(app){
     <div style="display:grid;gap:20px;min-width:0">
      <form class="panel" id="profF"><h3>Profile</h3>
       <div style="display:flex;gap:16px;align-items:center"><span style="width:72px;height:72px;border-radius:50%;overflow:hidden;background:var(--accent);display:grid;place-items:center;font:800 1.8rem var(--f-display);color:#111;flex:none">${u.avatar&&E.mediaURL(u.avatar)?`<img src="${E.mediaURL(u.avatar)}" alt="" style="width:100%;height:100%;object-fit:cover">`:esc(u.name[0].toUpperCase())}</span><div class="field"><label for="pAv">Profile picture</label><input type="file" id="pAv" accept="image/*" class="small"></div></div>
-      <div class="form-grid"><div class="field"><label for="pName">Display name</label><input class="input" id="pName" value="${esc(u.name)}" maxlength="40"></div>
+      <div class="form-grid"><div class="field"><label for="pName">Party name</label><input class="input" id="pName" value="${esc(u.name)}" maxlength="40"><span class="tiny muted">Shown to others on events you go to. Use a nickname, not your real name.</span></div>
       <div class="field"><label for="pCity">Location</label><select class="input" id="pCity">${window.EVENTLY_CITIES.map(c=>`<option ${u.city===c.name?"selected":""}>${esc(c.name)}</option>`).join("")}</select></div></div>
       <div class="field"><span class="small" style="font-weight:600">Interests</span><div class="chips">${R.INTERESTS.map(i=>`<button type="button" class="chip" data-int="${i.id}" aria-pressed="${(u.interests||[]).includes(i.id)}">${i.label}</button>`).join("")}</div></div>
-      <label class="check"><input type="checkbox" id="pPub" ${u.publicAttendance?"checked":""}> Show my attendance publicly on event pages</label>
+      <label class="check"><input type="checkbox" id="pPub" ${u.publicAttendance?"checked":""}> Show my party name on events I'm going to</label>
       <span class="small muted">Signed in as ${esc(u.email)} · Role: ${esc(u.role)}</span>
       <button class="btn btn-primary" style="justify-self:start">Save profile</button></form>
      <form class="panel" id="prefF"><h3>Notifications</h3><p class="small muted">Choose what Evently tells you about.</p>
@@ -196,7 +199,7 @@ R.account = function(app){
     </aside></div></div>`;
   app.onclick=e=>{ const i=e.target.closest("[data-int]"); if(i) i.setAttribute("aria-pressed", i.getAttribute("aria-pressed")!=="true"); };
   $("#pAv").onchange=async e=>{ try{ const b=await E.resizeImage(e.target.files[0],256,.86); if(u.avatar) E.delBlob(u.avatar); u.avatar=E.putBlob(b); E.persist(); R.header(); R.account(app); E.toast("Profile picture updated"); }catch(err){ E.toast(err.message); } };
-  $("#profF").onsubmit=e=>{ e.preventDefault(); const n=$("#pName").value.trim(); if(n.length<2){ E.toast("Enter a display name."); return; } u.name=n; u.city=$("#pCity").value; u.interests=$$("#profF [data-int][aria-pressed=true]").map(b=>b.dataset.int); u.publicAttendance=$("#pPub").checked; E.persist(); R.header(); E.toast("Profile saved"); };
+  $("#profF").onsubmit=e=>{ e.preventDefault(); const n=$("#pName").value.trim(); if(n.length<2){ E.toast("Enter a party name."); return; } u.name=n; u.city=$("#pCity").value; u.interests=$$("#profF [data-int][aria-pressed=true]").map(b=>b.dataset.int); u.publicAttendance=$("#pPub").checked; E.persist(); R.header(); E.toast("Profile saved"); };
   $("#pushChk").onchange=async e=>{ if(e.target.checked){ if(!("Notification" in window)){ $("#pushMsg").textContent="This browser doesn't support push notifications."; e.target.checked=false; return; } try{ const r=await Notification.requestPermission(); if(r!=="granted"){ e.target.checked=false; $("#pushMsg").textContent="Permission wasn't granted, so push stays off. You'll still get in-app notifications."; } else $("#pushMsg").textContent="Push notifications are allowed."; }catch(_){ e.target.checked=false; $("#pushMsg").textContent="Push notifications aren't available here."; } } };
   $("#prefF").onsubmit=e=>{ e.preventDefault(); const np={}; $$("[data-pref]").forEach(c=>np[c.dataset.pref]=c.checked); S.prefs[u.id]=np; E.persist(); E.toast("Notification settings saved"); };
   if($("#roleBtn")) $("#roleBtn").onclick=()=>{ u.role=u.role==="admin"?"user":"admin"; E.audit(u.role==="admin"?"Enabled admin access (preview)":"Disabled admin access","user "+u.email); E.persist(); R.account(app); E.toast(u.role==="admin"?"Admin access on":"Admin access off"); };

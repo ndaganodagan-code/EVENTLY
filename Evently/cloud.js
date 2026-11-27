@@ -236,6 +236,13 @@ C.countsFor = function(slug, local){
   return {saves:Math.max(0, +s.saves + savedNow - savedThen), interested:Math.max(0, +s.interested + d("interested")), going:Math.max(0, +s.going + d("going")),
     views:+s.views + newViews, shares:+s.shares + newShares, recent:local.recent};
 };
+C.attendees = async slug => { if (!C.on || !sb) return null; const {data, error} = await sb.rpc("public_attendees", {event:slug}); return error ? null : data; };
+C.reviews = async slug => { if (!C.on || !sb) return null; const {data, error} = await sb.rpc("event_reviews", {event:slug}); if (error) return null;
+  return (data||[]).map(r => ({id:r.id, name:r.name, stars:r.stars, body:r.body||"", t:Date.parse(r.created_at), went:!!r.went, mine:!!r.mine})); };
+C.saveReview = async (slug, stars, body) => { if (!C.on || !sb || !uid) return false;
+  const {error} = await sb.from("reviews").upsert({event_slug:slug, user_id:uid, stars, body}, {onConflict:"event_slug,user_id"});
+  if (error) { E.toast(/row-level security/i.test(error.message) ? "You can rate this event once it has started." : "Your rating was not saved. Check your connection and try again."); return false; } return true; };
+C.deleteReview = async id => { if (!C.on || !sb) return false; const {error} = await sb.from("reviews").delete().eq("id", id); if (error) { E.toast("That review was not removed. Try again."); return false; } return true; };
 C.bump = (slug, field) => { if (C.on && sb) sb.rpc("bump_stat", {slug, field}).then(() => {}, () => {}); };
 
 /* ---------- Sign in, sign up, reset ---------- */
@@ -263,7 +270,7 @@ C.authSubmit = async function(mode, m, email){
     E.closeModal(); E.toast("Welcome back, " + (E.me()||{}).name); R().afterAuth(); return;
   }
   if ($("#aHp") && $("#aHp").value) return;
-  const name = $("#aName").value.trim(); if (name.length < 2) { err.textContent = "Enter a display name."; return; }
+  const name = $("#aName").value.trim(); if (name.length < 2) { err.textContent = "Enter a party name."; return; }
   if (!pwOK(pw)) { err.textContent = "Use at least 8 characters with a letter and a number."; return; }
   const interests = Array.from(m.querySelectorAll("[data-int][aria-pressed=true]")).map(b => b.dataset.int);
   busy(true);
@@ -282,6 +289,7 @@ async function afterSignIn(user){
   try { await pullUser(); } catch(e) { console.warn("[Evently]", e); }
   E.invalidate(); takeSnap(); snap.follows = serverFollows.slice(); E.persist(); if (R()) R().header();
   if (uid) C.sync(); // pushes follows saved before signing in
+  setTimeout(partyNameModal, 600);
 }
 function newPasswordModal(){
   const m = E.modal(`<div class="modal-head"><h3>Set a new password</h3><button class="icon-btn" data-close aria-label="Close">${E.I.x}</button></div>
@@ -292,12 +300,36 @@ function newPasswordModal(){
     E.closeModal(); E.toast("Password updated. You're signed in."); };
 }
 
+/* ---------- Google sign-in (shown only when it is switched on in Supabase and the site has a web address) ---------- */
+C.google = false;
+C.googleReady = () => C.on && C.google && /^https?:$/.test(location.protocol);
+async function checkProviders(){
+  try { const r = await withTimeout(fetch(URL_ + "/auth/v1/settings", {headers:{apikey:KEY}}), 6000); const j = await r.json(); C.google = !!(j.external && j.external.google); }
+  catch(e) { C.google = false; }
+}
+C.googleSignIn = async function(){
+  const {error} = await sb.auth.signInWithOAuth({provider:"google", options:{redirectTo:redirect()}});
+  if (error) E.toast("Google sign-in didn't start. Try again or use your email.");
+};
+function partyNameModal(){
+  const u = E.me(); if (!u || !(S.prefs[uid] || {}).needsPartyName || document.getElementById("pnF")) return;
+  const m = E.modal(`<div class="modal-head"><h3>Choose your party name</h3></div>
+    <form id="pnF" style="display:grid;gap:12px"><p class="small muted">This is the name other people see on events you go to and on your reviews. Use a nickname, not your real name.</p>
+    <div class="field"><label for="pnN">Party name</label><input class="input" id="pnN" maxlength="40" autocomplete="nickname" placeholder="e.g. DJ Rolex"></div>
+    <span class="err" id="pnE" role="alert"></span><button class="btn btn-primary">Save party name</button></form>`);
+  m.querySelector("#pnN").focus();
+  m.querySelector("#pnF").onsubmit = e => { e.preventDefault(); const n = m.querySelector("#pnN").value.trim();
+    if (n.length < 2) { m.querySelector("#pnE").textContent = "Enter a party name."; return; }
+    const me = E.me(); me.name = n; me.publicAttendance = true; delete S.prefs[uid].needsPartyName;
+    E.persist(); E.closeModal(); if (R()) R().header(); E.toast("Welcome to Evently, " + n + "!"); };
+}
+
 /* ---------- Start ---------- */
 C.init = async function(){
   if (!window.supabase || !window.supabase.createClient) return;
   try {
     sb = window.supabase.createClient(URL_, KEY, {auth:{flowType:"pkce", persistSession:true, autoRefreshToken:true, detectSessionInUrl:true, storageKey:"evently.auth"}});
-    await withTimeout(pullEvents(), 6000);
+    await Promise.all([withTimeout(pullEvents(), 6000), checkProviders()]);
     const {data} = await withTimeout(sb.auth.getSession(), 8000);
     const local = S.session;
     C.on = true;
@@ -305,6 +337,7 @@ C.init = async function(){
     else if (local) { clearUser(local); }   // accounts made before the switch lived only in this browser
     loadTime = Date.now(); E.invalidate(); takeSnap(); if (uid) snap.follows = serverFollows.slice(); C.ready = true; E.persist();
     if (/[?&]code=/.test(location.search)) history.replaceState(null, "", location.pathname + location.hash);
+    if (uid) setTimeout(partyNameModal, 600);
     sb.auth.onAuthStateChange((ev, session) => {
       if (ev === "PASSWORD_RECOVERY") setTimeout(newPasswordModal, 300);
       if (ev === "SIGNED_IN" && session && session.user.id !== uid) afterSignIn(session.user).then(() => R() && R().render());
