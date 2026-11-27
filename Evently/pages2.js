@@ -95,10 +95,11 @@ R.authModal = function(mode="login", reason=""){
     </form>
     <div class="small muted" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
       ${mode==="login"?`<button class="link" style="border:0;background:none" data-mode="register">New here? Create an account</button><button class="link" style="border:0;background:none" data-mode="reset">Forgot password?</button>`:`<button class="link" style="border:0;background:none" data-mode="login">Back to sign in</button>`}</div>
-    <p class="tiny muted">Your password is encrypted before it is stored.</p>`);
+    <p class="tiny muted">${E.cloud()?"Your account is stored securely with Evently.":"Your password is encrypted before it is stored."}</p>`);
   m.addEventListener("click",e=>{ const b=e.target.closest("[data-mode]"); if(b) R.authModal(b.dataset.mode, reason); const i=e.target.closest("[data-int]"); if(i) i.setAttribute("aria-pressed", i.getAttribute("aria-pressed")!=="true"); });
   $("#authF",m).onsubmit=async e=>{ e.preventDefault(); const err=$("#aErr",m); err.textContent="";
     const email=$("#aEmail",m).value.trim().toLowerCase(); if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)){ err.textContent="Enter a valid email address."; return; }
+    if(E.cloud()) return window.EVCLOUD.authSubmit(mode, m, email);
     if(mode==="reset"){ const u=S.users.find(x=>x.email===email); const code=String(100000+Math.floor(Math.random()*900000)); if(u){ S.resets[email]={code,t:Date.now()}; E.persist(); }
       const mm=E.modal(`<div class="modal-head"><h3>Enter your reset code</h3><button class="icon-btn" data-close aria-label="Close">${I.x}</button></div>
         <p class="small muted">If ${esc(email)} has an account, we've sent a 6-digit code. ${u?`Your one-time code is <span class="kbd" style="user-select:all">${code}</span>.`:"No account uses that email in this browser."}</p>
@@ -189,7 +190,7 @@ R.account = function(app){
     </div>
     <aside style="display:grid;gap:16px">
      <div class="panel"><h3>Quick links</h3><a class="link" href="#my-events">My Events</a><a class="link" href="#organizers">Organizer dashboard</a>${u.role==="admin"?`<a class="link" href="#admin">Admin dashboard</a>`:""}</div>
-     <div class="panel"><h3>Administrator preview</h3><p class="small muted">In production, admin access is granted by Evently staff. In this preview you can switch it on to try moderation.</p><button class="btn btn-ghost btn-sm" id="roleBtn">${u.role==="admin"?"Switch back to a regular account":"Switch on admin access"}</button></div>
+     ${E.cloud()?"":`<div class="panel"><h3>Administrator preview</h3><p class="small muted">In production, admin access is granted by Evently staff. In this preview you can switch it on to try moderation.</p><button class="btn btn-ghost btn-sm" id="roleBtn">${u.role==="admin"?"Switch back to a regular account":"Switch on admin access"}</button></div>`}
      <div class="panel"><button class="btn btn-ghost" id="logoutBtn">Log out</button></div>
      <div class="panel" style="border-color:var(--bad-soft)"><h3>Delete account</h3><p class="small muted">Removes your profile, saved events, attendance and notifications from Evently. This can't be undone.</p><div id="delZone"><button class="btn btn-danger btn-sm" id="delBtn">Delete my account</button></div></div>
     </aside></div></div>`;
@@ -198,7 +199,7 @@ R.account = function(app){
   $("#profF").onsubmit=e=>{ e.preventDefault(); const n=$("#pName").value.trim(); if(n.length<2){ E.toast("Enter a display name."); return; } u.name=n; u.city=$("#pCity").value; u.interests=$$("#profF [data-int][aria-pressed=true]").map(b=>b.dataset.int); u.publicAttendance=$("#pPub").checked; E.persist(); R.header(); E.toast("Profile saved"); };
   $("#pushChk").onchange=async e=>{ if(e.target.checked){ if(!("Notification" in window)){ $("#pushMsg").textContent="This browser doesn't support push notifications."; e.target.checked=false; return; } try{ const r=await Notification.requestPermission(); if(r!=="granted"){ e.target.checked=false; $("#pushMsg").textContent="Permission wasn't granted, so push stays off. You'll still get in-app notifications."; } else $("#pushMsg").textContent="Push notifications are allowed."; }catch(_){ e.target.checked=false; $("#pushMsg").textContent="Push notifications aren't available here."; } } };
   $("#prefF").onsubmit=e=>{ e.preventDefault(); const np={}; $$("[data-pref]").forEach(c=>np[c.dataset.pref]=c.checked); S.prefs[u.id]=np; E.persist(); E.toast("Notification settings saved"); };
-  $("#roleBtn").onclick=()=>{ u.role=u.role==="admin"?"user":"admin"; E.audit(u.role==="admin"?"Enabled admin access (preview)":"Disabled admin access","user "+u.email); E.persist(); R.account(app); E.toast(u.role==="admin"?"Admin access on":"Admin access off"); };
+  if($("#roleBtn")) $("#roleBtn").onclick=()=>{ u.role=u.role==="admin"?"user":"admin"; E.audit(u.role==="admin"?"Enabled admin access (preview)":"Disabled admin access","user "+u.email); E.persist(); R.account(app); E.toast(u.role==="admin"?"Admin access on":"Admin access off"); };
   $("#logoutBtn").onclick=()=>{ S.session=null; E.persist(); R.header(); location.hash="home"; E.toast("Logged out"); };
   $("#delBtn").onclick=()=>{ $("#delZone").innerHTML=`<p class="small"><b>Are you sure?</b> Type DELETE to confirm.</p><input class="input" id="delIn" style="margin:8px 0"><div style="display:flex;gap:8px"><button class="btn btn-danger btn-sm" id="delYes">Delete permanently</button><button class="btn btn-ghost btn-sm" id="delNo">Keep my account</button></div>`; $("#delNo").onclick=()=>R.account(app); $("#delYes").onclick=()=>{ if($("#delIn").value.trim()!=="DELETE"){ E.toast("Type DELETE to confirm."); return; } [S.saved,S.attend,S.notifs,S.prefs].forEach(o=>delete o[u.id]); if(u.avatar) E.delBlob(u.avatar); S.users=S.users.filter(x=>x.id!==u.id); S.session=null; E.audit("Deleted own account",u.email); E.persist(); R.header(); location.hash="home"; E.toast("Your account was deleted"); }; };
 };
